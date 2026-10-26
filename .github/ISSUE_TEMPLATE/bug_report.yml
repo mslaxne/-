@@ -1,0 +1,65 @@
+name: Bug report
+description: Report a reproducible Handora test-build problem
+title: "[Bug] "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Do not include API keys, private chat content, account identifiers, screenshots of personal conversations, or unredacted databases.
+  - type: input
+    id: app_version
+    attributes:
+      label: Handora app version
+      placeholder: "1.0.128 (152)"
+    validations:
+      required: true
+  - type: input
+    id: device
+    attributes:
+      label: Device and Android version
+      placeholder: "vivo V2055A, Android 13"
+    validations:
+      required: true
+  - type: input
+    id: wechat_version
+    attributes:
+      label: WeChat version
+      placeholder: "8.0.79 / versionCode 3200"
+    validations:
+      required: true
+  - type: dropdown
+    id: installation
+    attributes:
+      label: Installation type
+      options:
+        - GitHub pre-release APK
+        - Self-built APK
+        - Upgraded from an earlier Handora build
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Reproduction steps
+      description: List the shortest reliable sequence.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+    validations:
+      required: true
+  - type: textarea
+    id: sanitized_logs
+    attributes:
+      label: Sanitized logs or diagnostics
+      description: Remove chat text, contact names, API keys, account identifiers, and screenshots of personal conversations.

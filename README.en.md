@@ -14,6 +14,15 @@ and a first-stage route-C Accessibility transport. Auto-send is off by default.
 > Accessibility-service rules. Do not use it for harassment, spam,
 > impersonation, or non-consensual automation.
 
+## Test APK
+
+- [Download the 1.0.128 Route C test build](https://github.com/mslaxne/handora-android-public/releases/tag/v1.0.128-test.1)
+- The APK is signed with an Android development/debug certificate. It is a
+  feedback build, not a stable production release.
+- Include the device model, Android version, WeChat version, app version, and
+  reproduction steps in bug reports. Never upload API keys, chat content, or
+  other sensitive data.
+
 ## Capabilities
 
 - MediaProjection screen capture with a five-second delay.

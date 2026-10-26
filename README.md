@@ -11,6 +11,13 @@ Shizuku 传输和第一阶段 Route C 无障碍传输。自动发送默认关闭
 > 账号和设备；必须遵守微信条款、当地法律和无障碍服务相关规则。不得用于
 > 骚扰、垃圾消息、冒充或未经同意的自动化。
 
+## 测试 APK
+
+- [下载 1.0.128 Route C 测试版](https://github.com/mslaxne/handora-android-public/releases/tag/v1.0.128-test.1)
+- 该构建使用 Android 开发/调试证书签名，只用于测试反馈，不是稳定正式版。
+- 问题反馈请提供设备型号、Android 版本、微信版本、App 版本和复现步骤；
+  不要上传 API Key、聊天内容或其他敏感数据。
+
 ## 功能
 
 - 使用 MediaProjection 截屏，默认延迟 5 秒。
