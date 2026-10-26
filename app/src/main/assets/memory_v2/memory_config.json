@@ -1,0 +1,225 @@
+{
+  "background": {
+    "backoff_seconds": [
+      1,
+      5,
+      30
+    ],
+    "call_timeout_seconds": 30,
+    "debounce_seconds": 60,
+    "lease_seconds": 60,
+    "max_attempts": 3,
+    "max_candidates": 0,
+    "max_input_estimate": 4096,
+    "max_llm_calls_per_device_hour": 60,
+    "max_llm_calls_per_scope_hour": 12,
+    "max_sources": 0,
+    "min_batch_messages": 8,
+    "one_inflight_per_scope": true
+  },
+  "capacity": {
+    "control_reserve_bytes": 1048576,
+    "dependency_max_per_child": 256,
+    "device_memory_budget_bytes": 268435456,
+    "high_watermark": 0.85,
+    "low_watermark": 0.75,
+    "max_evidence_per_memory": 8,
+    "max_item_utf8_bytes": 8192,
+    "max_quote_utf8_bytes": 2048,
+    "max_reclaim_batches": 3,
+    "max_reclaim_bytes": 262144,
+    "max_reclaim_records": 50,
+    "max_scopes": 256,
+    "min_device_free_bytes": 67108864,
+    "row_overhead_bytes": 64,
+    "scope_bytes": 33554432
+  },
+  "context": {
+    "a0_core_tokens": 1024,
+    "a3_min_tokens": 1024,
+    "a3_target_tokens": 3072,
+    "fallback_input_fraction": 1.0,
+    "framing_fixed": 256,
+    "framing_per_message": 64,
+    "optional_memory_tokens": 2048,
+    "output_reserve": 2048,
+    "profile_max_age_days": 30,
+    "reply_context_provider_window_tokens": {
+      "custom_openai": 32768,
+      "deepseek": 1048576,
+      "disabled": 0,
+      "gemini_free": 131072,
+      "groq_free": 32768,
+      "openrouter_free": 32768
+    },
+    "reply_context_recent_raw_messages": 8,
+    "retry_context_overflow": 1,
+    "safety_margin": 512,
+    "target_input_tokens": 0,
+    "unknown_window": "block",
+    "unreliable_mode": "conservative_text_only",
+    "working_summary_max_utf8_bytes": 8192,
+    "working_summary_tokens": 512
+  },
+  "enabled": false,
+  "hot_path": {
+    "db_p95_target_ms": 50,
+    "deterministic_prefilter_version": "prefilter-2.0.0",
+    "extra_llm_calls": 0,
+    "max_message_utf8_bytes": 65536,
+    "memory_p95_target_ms": 100,
+    "pending_deadline_ms": 300000,
+    "sync_command_deadline_ms": 250
+  },
+  "resources": {
+    "aliases": {
+      "max_bytes": 524288,
+      "max_records": 4096
+    },
+    "audit_events": {
+      "max_bytes": 1048576,
+      "max_records": 4096
+    },
+    "coverage": {
+      "max_bytes": 2097152,
+      "max_records": 20000
+    },
+    "dependencies": {
+      "max_bytes": 1048576,
+      "max_records": 8192
+    },
+    "entities": {
+      "max_bytes": 524288,
+      "max_records": 2048
+    },
+    "jobs": {
+      "max_bytes": 2097152,
+      "max_records": 256
+    },
+    "messages": {
+      "max_bytes": 8388608,
+      "max_records": 10000
+    },
+    "memory_conflicts": {
+      "max_bytes": 262144,
+      "max_records": 512
+    },
+    "memory_relations": {
+      "max_bytes": 262144,
+      "max_records": 1024
+    },
+    "migration": {
+      "max_bytes": 4194304,
+      "max_records": 10000
+    },
+    "operations": {
+      "max_bytes": 524288,
+      "max_records": 512
+    },
+    "outbox": {
+      "max_bytes": 1048576,
+      "max_records": 2048
+    },
+    "scheduled_tasks": {
+      "max_bytes": 524288,
+      "max_records": 512
+    },
+    "scopes": {
+      "max_bytes": 16384,
+      "max_records": 1
+    },
+    "sessions": {
+      "max_bytes": 1048576,
+      "max_records": 128
+    },
+    "tombstones": {
+      "max_bytes": 262144,
+      "max_records": 4096
+    }
+  },
+  "restore": {
+    "automatic_backup_import": false,
+    "require_independent_latest_fence": true
+  },
+  "retention": {
+    "audit_seconds": 1209600,
+    "history_seconds": 2592000,
+    "history_versions": 3,
+    "host_policy": "minimum; evidence inheritance must be explicit",
+    "operation_receipts_seconds": 2592000,
+    "quarantine_seconds": 604800,
+    "source_cache_seconds": 604800,
+    "terminal_jobs_seconds": 604800,
+    "tombstone_ttl_seconds": null
+  },
+  "retention_score": {
+    "recency_half_life_days": 90,
+    "weights": {
+      "evidence": 0.1,
+      "importance": 0.5,
+      "recency": 0.15,
+      "stability": 0.25
+    }
+  },
+  "retrieval": {
+    "candidate_limit": 0,
+    "max_expansion": 1,
+    "recency_half_life_days": 30,
+    "reply_candidate_limit": 0,
+    "reply_context_exact_days": 3,
+    "reply_context_expanded_days": 7,
+    "reply_context_similarity": 0.65,
+    "reply_selected_limit": 0,
+    "selected_limit": 0,
+    "semantic_enabled": false,
+    "weights": {
+      "evidence": 0.1,
+      "importance": 0.2,
+      "recency": 0.15,
+      "relevance": 0.55
+    }
+  },
+  "scheduler": {
+    "adapter_required": true,
+    "confirm_after_external_ack": true,
+    "enabled": false,
+    "max_attempts": 3
+  },
+  "schema_version": "2.0.0",
+  "scope": {
+    "cross_scope_retrieval": false,
+    "identity": [
+      "owner_id",
+      "contact_id",
+      "agent_id",
+      "persona_id",
+      "realm_id"
+    ]
+  },
+  "tiers": {
+    "A0": {
+      "auto_evict": false,
+      "max_bytes": null,
+      "max_records": null
+    },
+    "A1": {
+      "auto_evict": true,
+      "max_bytes": 1048576,
+      "max_records": 500
+    },
+    "A2": {
+      "auto_evict": true,
+      "max_bytes": 3145728,
+      "max_records": 1500,
+      "ttl_seconds": 2592000
+    }
+  },
+  "timezone": "Asia/Shanghai",
+  "versions": {
+    "answer_prompt": "answer-2.1.0",
+    "extraction_prompt": "extract-2.1.2",
+    "pipeline": "2.1.2",
+    "policy": "2.1.2",
+    "summary_prompt": "summary-2.1.2"
+  }
+}

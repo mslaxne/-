@@ -1,0 +1,46 @@
+{
+  "schema_version": "2.0.0",
+  "profiles": [
+    {
+      "profile_id": "deepseek-deployment-required",
+      "provider": "deepseek",
+      "base_url": "https://api.deepseek.com",
+      "model": null,
+      "model_revision": null,
+      "context_window_tokens": null,
+      "output_max_tokens": null,
+      "verified_at": null,
+      "tokenizer_sha256": null,
+      "tokenizer_model_revision": null,
+      "chat_template_sha256": null,
+      "tokenizer_calibrated": false,
+      "text_only": true,
+      "thinking_enabled": false
+    },
+    {
+      "profile_id": "deepseek-flash-text-floor-2026-10-23",
+      "provider": "deepseek",
+      "base_url": "https://api.deepseek.com",
+      "model": "deepseek-flash",
+      "model_revision": "DeepSeek-V4.1-Flash-1017",
+      "context_window_tokens": 1048576,
+      "window_kind": "provider_documented_window",
+      "provider_context_label": "1M",
+      "output_max_tokens": 2048,
+      "verified_at": "2026-10-23T00:00:00+08:00",
+      "tokenizer_sha256": null,
+      "tokenizer_model_revision": null,
+      "chat_template_sha256": null,
+      "tokenizer_calibrated": false,
+      "text_only": true,
+      "thinking_enabled": false,
+      "verification": "Official docs checked; the provider currently labels this deployment as 1M. The application no longer imposes a smaller count or input-token cap. No live tokenizer calibration performed."
+    }
+  ],
+  "official_reference": {
+    "checked_on": "2026-10-23",
+    "models_url": "https://api-docs.deepseek.com/quick_start/pricing/",
+    "tokenizer_url": "https://api-docs.deepseek.com/quick_start/token_usage/",
+    "notes": "The page currently labels context 1M. Deployment must verify its exact model, endpoint and integer limit; aliases can move. An offline tokenizer estimate is not API truth."
+  }
+}

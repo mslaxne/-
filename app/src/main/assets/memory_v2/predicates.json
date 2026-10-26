@@ -1,0 +1,115 @@
+{
+  "schema_version": "2.0.0",
+  "predicates": {
+    "profile.name": {
+      "cardinality": "single",
+      "allow_A0": true,
+      "value_schema": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 2048
+      }
+    },
+    "profile.city": {
+      "cardinality": "single",
+      "allow_A0": true,
+      "value_schema": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 2048
+      }
+    },
+    "anniversary.date": {
+      "cardinality": "single",
+      "allow_A0": true,
+      "value_schema": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 2048
+      }
+    },
+    "relationship.status": {
+      "cardinality": "single",
+      "allow_A0": false,
+      "value_schema": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 2048
+      }
+    },
+    "relationship.role": {
+      "cardinality": "single",
+      "allow_A0": true,
+      "value_schema": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 2048
+      }
+    },
+    "persona.description": {
+      "cardinality": "single",
+      "allow_A0": true,
+      "requires": "persona_editor",
+      "value_schema": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 2048
+      }
+    },
+    "preference.food": {
+      "cardinality": "multi",
+      "allow_A0": false,
+      "value_schema": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 2048
+      }
+    },
+    "preference.drink": {
+      "cardinality": "multi",
+      "allow_A0": false,
+      "value_schema": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 2048
+      }
+    },
+    "impression.person": {
+      "cardinality": "multi",
+      "allow_A0": false,
+      "requires_viewpoint": true,
+      "value_schema": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 2048
+      }
+    },
+    "commitment.event": {
+      "cardinality": "event",
+      "allow_A0": false,
+      "value_schema": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 2048
+      }
+    },
+    "experience.event": {
+      "cardinality": "event",
+      "allow_A0": false,
+      "value_schema": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 2048
+      }
+    },
+    "event.summary": {
+      "cardinality": "event",
+      "allow_A0": false,
+      "value_schema": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 2048
+      }
+    }
+  }
+}

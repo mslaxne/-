@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">代理</string>
+    <string name="accessibility_description">按固定坐标截图、点击并记录前台应用，不读取微信界面内容</string>
+    <string name="ime_name">代理输入法</string>
+    <string name="ime_subtype_label">中文测试输入</string>
+    <string name="status_with_time">%1$s\n\n%2$s</string>
+    <string name="screenshot_summary">最近截图 %1$dx%2$d  %3$d KB</string>
+    <string name="screenshot_decode_failed">截图文件存在，但图片解码失败</string>
+    <string name="screenshot_missing">截图文件不存在：%1$s</string>
+    <string name="persona_preset_load_failed">人格预设读取失败 · 旧 profile.json 仍保留</string>
+    <string name="persona_preset_counts">%1$d 个可用 · %2$d 个已归档</string>
+    <string name="roleplay_consent_checkbox">我已知情：仅当前联系人和当前人格生效；不披露不等于冒充现实真人，也不代表 AI 具备现实身体或行动能力。</string>
+    <string name="migration_relation_omission">我确认本次不迁移未映射的关系；源关系仍保留在原 scope。</string>
+    <string name="migration_a0_high_risk">我确认这是 A0 核心事实迁移，已在源人格中逐条核对身份、冲突和证据。</string>
+    <string name="memory_a0_review_confirm">我已核对证据，确认批准这次 A0 变更</string>
+</resources>

@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="ui_background">#F4F6F7</color>
+    <color name="ui_surface">#FFFFFF</color>
+    <color name="ui_border">#DDE3E7</color>
+    <color name="ui_primary">#0C715B</color>
+    <color name="launcher_background">#CECCD8</color>
+</resources>

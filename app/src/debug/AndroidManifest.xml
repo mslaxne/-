@@ -1,0 +1,206 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+    <application>
+        <receiver
+            android:name=".DebugScreenshotBenchmarkReceiver"
+            android:exported="true"
+            android:permission="android.permission.DUMP">
+            <intent-filter>
+                <action android:name="com.local.wxbotprobe.DEBUG_SCREENSHOT_BENCHMARK" />
+            </intent-filter>
+        </receiver>
+        <receiver
+            android:name=".DebugImeProbeReceiver"
+            android:exported="true"
+            android:permission="android.permission.DUMP">
+            <intent-filter>
+                <action android:name="com.local.wxbotprobe.DEBUG_IME_TEXT_PROBE" />
+            </intent-filter>
+        </receiver>
+        <receiver
+            android:name=".DebugOcrBenchmarkReceiver"
+            android:exported="true"
+            android:permission="android.permission.DUMP">
+            <intent-filter>
+                <action android:name="com.local.wxbotprobe.DEBUG_OCR_BENCHMARK" />
+            </intent-filter>
+        </receiver>
+        <receiver
+            android:name=".DebugMemoryV2Receiver"
+            android:exported="true"
+            android:permission="android.permission.DUMP">
+            <intent-filter>
+                <action android:name="com.local.wxbotprobe.DEBUG_MEMORY_V2_SELFTEST" />
+            </intent-filter>
+        </receiver>
+        <receiver
+            android:name=".DebugMemoryV2LifecycleReceiver"
+            android:exported="true"
+            android:permission="android.permission.DUMP">
+            <intent-filter>
+                <action android:name="com.local.wxbotprobe.DEBUG_MEMORY_V2_LIFECYCLE" />
+            </intent-filter>
+        </receiver>
+        <receiver
+            android:name=".DebugMemoryV2OverflowReceiver"
+            android:exported="true"
+            android:permission="android.permission.DUMP">
+            <intent-filter>
+                <action android:name="com.local.wxbotprobe.DEBUG_MEMORY_V2_OVERFLOW" />
+            </intent-filter>
+        </receiver>
+        <receiver
+            android:name=".DebugMemoryV2ExtractProbeReceiver"
+            android:exported="true"
+            android:permission="android.permission.DUMP">
+            <intent-filter>
+                <action android:name="com.local.wxbotprobe.DEBUG_MEMORY_V2_EXTRACT_PROBE" />
+            </intent-filter>
+        </receiver>
+        <receiver
+            android:name=".DebugMemoryV2SummarySchedulerReceiver"
+            android:exported="true"
+            android:permission="android.permission.DUMP">
+            <intent-filter>
+                <action android:name="com.local.wxbotprobe.DEBUG_MEMORY_V2_SUMMARY_SCHEDULER" />
+            </intent-filter>
+        </receiver>
+        <receiver
+            android:name=".DebugMemoryV2BacklogReceiver"
+            android:exported="true"
+            android:permission="android.permission.DUMP">
+            <intent-filter>
+                <action android:name="com.local.wxbotprobe.DEBUG_MEMORY_V2_BACKLOG" />
+            </intent-filter>
+        </receiver>
+        <receiver
+            android:name=".DebugMemoryV2ScenarioReceiver"
+            android:exported="true"
+            android:permission="android.permission.DUMP">
+            <intent-filter>
+                <action android:name="com.local.wxbotprobe.DEBUG_MEMORY_V2_SCENARIO" />
+            </intent-filter>
+        </receiver>
+        <receiver
+            android:name=".DebugBaselineOnlyReceiver"
+            android:exported="true"
+            android:permission="android.permission.DUMP">
+            <intent-filter>
+                <action android:name="com.local.wxbotprobe.DEBUG_BASELINE_ONLY" />
+            </intent-filter>
+        </receiver>
+        <receiver
+            android:name=".DebugMemoryV2ReconciliationReceiver"
+            android:exported="true"
+            android:permission="android.permission.DUMP">
+            <intent-filter>
+                <action android:name="com.local.wxbotprobe.DEBUG_MEMORY_V2_RECONCILIATION" />
+            </intent-filter>
+        </receiver>
+        <receiver
+            android:name=".DebugMemoryV2CoordinatorLifecycleReceiver"
+            android:exported="true"
+            android:permission="android.permission.DUMP">
+            <intent-filter>
+                <action android:name="com.local.wxbotprobe.DEBUG_MEMORY_V2_COORDINATOR_LIFECYCLE" />
+            </intent-filter>
+        </receiver>
+        <receiver
+            android:name=".DebugSendProbeReceiver"
+            android:exported="true"
+            android:permission="android.permission.DUMP">
+            <intent-filter>
+                <action android:name="com.local.wxbotprobe.DEBUG_SEND_PROBE" />
+            </intent-filter>
+        </receiver>
+        <receiver
+            android:name=".DebugDeliveryUnknownReceiver"
+            android:exported="true"
+            android:permission="android.permission.DUMP">
+            <intent-filter>
+                <action android:name="com.local.wxbotprobe.DEBUG_DELIVERY_UNKNOWN" />
+            </intent-filter>
+        </receiver>
+        <receiver
+            android:name=".DebugNaturalUnknownReceiver"
+            android:exported="true"
+            android:permission="android.permission.DUMP">
+            <intent-filter>
+                <action android:name="com.local.wxbotprobe.DEBUG_NATURAL_UNKNOWN" />
+            </intent-filter>
+        </receiver>
+        <receiver
+            android:name=".DebugProcessDeathSendReceiver"
+            android:exported="true"
+            android:permission="android.permission.DUMP">
+            <intent-filter>
+                <action android:name="com.local.wxbotprobe.DEBUG_PROCESS_DEATH_SEND" />
+            </intent-filter>
+        </receiver>
+        <receiver
+            android:name=".DebugPostTapProcessDeathReceiver"
+            android:exported="true"
+            android:permission="android.permission.DUMP">
+            <intent-filter>
+                <action android:name="com.local.wxbotprobe.DEBUG_POST_TAP_PROCESS_DEATH" />
+            </intent-filter>
+        </receiver>
+        <receiver
+            android:name=".DebugDeepSeekProbeReceiver"
+            android:exported="true"
+            android:permission="android.permission.DUMP">
+            <intent-filter>
+                <action android:name="com.local.wxbotprobe.DEBUG_DEEPSEEK_PROBE" />
+            </intent-filter>
+        </receiver>
+        <receiver
+            android:name=".DebugMemoryV2ReplyQualityReceiver"
+            android:exported="true"
+            android:permission="android.permission.DUMP">
+            <intent-filter>
+                <action android:name="com.local.wxbotprobe.DEBUG_MEMORY_V2_REPLY_QUALITY" />
+            </intent-filter>
+        </receiver>
+        <receiver
+            android:name=".DebugPersonaMatrixReceiver"
+            android:exported="true"
+            android:permission="android.permission.DUMP">
+            <intent-filter>
+                <action android:name="com.local.wxbotprobe.DEBUG_PERSONA_MATRIX" />
+            </intent-filter>
+        </receiver>
+        <receiver
+            android:name=".DebugPersonaPresetSnapshotReceiver"
+            android:exported="true"
+            tools:ignore="ExportedReceiver">
+            <intent-filter>
+                <action android:name="com.local.wxbotprobe.DEBUG_PERSONA_PRESET_SNAPSHOT" />
+            </intent-filter>
+        </receiver>
+        <receiver
+            android:name=".DebugPersonaScopeIsolationReceiver"
+            android:exported="true"
+            tools:ignore="ExportedReceiver">
+            <intent-filter>
+                <action android:name="com.local.wxbotprobe.DEBUG_PERSONA_SCOPE_ISOLATION" />
+            </intent-filter>
+        </receiver>
+        <receiver
+            android:name=".DebugRoleplayPolicyReceiver"
+            android:exported="true"
+            tools:ignore="ExportedReceiver">
+            <intent-filter>
+                <action android:name="com.local.wxbotprobe.DEBUG_ROLEPLAY_POLICY_MATRIX" />
+            </intent-filter>
+        </receiver>
+        <receiver
+            android:name=".DebugPersonaMigrationProbeReceiver"
+            android:exported="true"
+            tools:ignore="ExportedReceiver">
+            <intent-filter>
+                <action android:name="com.local.wxbotprobe.DEBUG_PERSONA_MIGRATION_PROBE" />
+            </intent-filter>
+        </receiver>
+    </application>
+</manifest>

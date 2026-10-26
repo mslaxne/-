@@ -1,0 +1,51 @@
+.gradle/
+.kotlin/
+.android/
+.browser-codex/
+.tooling/
+local.properties
+app/build/
+build/
+**/build/
+
+# Local deployment, release and evidence artifacts
+build-artifacts*
+dist/
+/*.png
+/*.log
+/*.csv
+/*.apk
+/*.aab
+*.db
+*.db-*
+*.sqlite
+*.sqlite-*
+*.hprof
+outbox/
+replies/
+captures/
+calibration/
+diagnostics/
+monitor/
+transport-benchmark/
+transport-captures/
+
+# Credentials and signing material
+.env*
+secrets.properties
+*.jks
+*.keystore
+*.p12
+*.pfx
+*.pem
+*.key
+
+# IDE-local files
+.idea/
+*.iml
+
+# Local handoff and production evidence
+HANDOFF*.md
+TEST_RESULTS.md
+RELEASE_READINESS.md
+NEW_CHAT_PROMPT.md

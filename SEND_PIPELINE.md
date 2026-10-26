@@ -1,0 +1,105 @@
+# Send pipeline
+
+The app can now deliver a generated reply without ADB input commands.
+
+## Implemented
+
+- `ReplySplitter` caps a reply at three bubbles and folds overflow into the last.
+- `ImeBridge` sends text through the app's active `InputMethodService`
+  `InputConnection`.
+- Shizuku UserService can enable/select input methods and send key events.
+- Route B switches to BotIme once per reply and restores Baidu afterward.
+- Route C BotIme is headless. It establishes the WeChat input connection without
+  showing a keyboard, so the chat input row is not raised by IME insets.
+- Before typing, it locates the current input field and clears only when the
+  green send button proves leftover text exists.
+- The sender reuses the input-field coordinate from the preceding full-screen
+  poll, removing a redundant pre-keyboard screenshot. It still re-locates the
+  field after input focus and keeps every green-button safety check.
+- Text entry retries up to three times and relocates the field after failure.
+- Send detection uses only the green button center measured from the current
+  screenshot. If no green button is present, delivery fails closed and remains
+  queued; there is no hardcoded fallback tap.
+- The BotIme keyboard no longer exposes a clickable test-write button. Its bottom
+  area is a same-sized non-clickable status surface, so send-coordinate mistakes
+  cannot inject `这是测试` into the WeChat draft.
+- Auto-send is off by default. The explicit switch is stored locally.
+- Chat title/fingerprint is recorded when a reply is queued, but it is not
+  rechecked during the active send. WeChat can replace the title with
+  `对方正在输入中`, which made the old header-pixel guard cancel valid sends.
+- Every write and send tap still requires `com.tencent.mm` in the foreground and
+  BotIme's current editor package to be `com.tencent.mm`; screen-off and locked
+  checks remain active.
+- Switching chats inside WeChat cannot be detected reliably. The auto-send UI
+  explicitly warns users not to switch chats during a send.
+- Pending deliveries are persisted under `files/outbox/`. Each confirmed part
+  advances `nextPartIndex`, so a partial failure resumes from the first unsent
+  bubble instead of replaying the full reply.
+- Generation task IDs now determine deterministic reply filenames and delivery
+  IDs. Recovery reuses an existing reply and existing SENT delivery rather than
+  calling the model or sending the reply again.
+- `ReplyContentGuard` persists the last accepted normalized reply per contact
+  and suppresses an identical new reply for 30 seconds.
+- Reply retry and delivery queues select the first ready task, so an older task
+  waiting for backoff does not block a newer ready task.
+- `DeviceActionGate` temporarily hides the overlay while screenshots and sends
+  run, then restores it even when the device action fails.
+- `MeteredChatClient` reserves the conservative worst-case API cost before every
+  reply, rewrite and memory-summary request. A blocked generation remains
+  pending without consuming a retry attempt.
+- Settings provides an operator queue for pending/failed deliveries and reply
+  generations. Retry resets backoff and attempts; removal requires confirmation
+  and is blocked while the agent is running.
+- Before each send tap, the delivery is persisted with `sendInFlight` and the
+  current process run ID. An unconfirmed marker from a dead process becomes
+  `UNKNOWN` after restart and is never auto-resent; manual review is required.
+- Reply JSON is updated with `deliveryStatus`, `sentParts`, `totalParts` and the
+  last error. Deliveries wait for the original chat and use bounded backoff.
+- Model-generation errors are persisted under `files/reply-retries/`. Retries
+  use the original burst text and chat fingerprint, with a five-attempt cap and
+  5/10/20/40-second backoff. Skipped messages such as disabled group replies do
+  not enter this queue.
+- The Home deployment summary shows waiting and permanently failed generation
+  counts in addition to queued deliveries.
+- Every queued delivery is checked before sending against a normalized contact
+  whitelist, local quiet hours, the daily sent-bubble cap and the daily API-cost
+  cap. Blocked deliveries remain in the outbox and are not deleted.
+- Route C sender screenshots start at a 1.5-second interval. A system
+  rate-limit response raises future screenshot pacing to 3.5 seconds; polling
+  remains at three seconds.
+- The default guard values are an empty whitelist, 50 bubbles per local day,
+  `$1.00` API cost per local day, and quiet hours `23:00-07:00`.
+- API spend is recorded per successful model call from actual prompt and
+  completion token usage. Pricing uses conservative peak rates: flash
+  `$0.30/M` input and `$1.20/M` output, pro `$1.32/M` input and `$3.96/M`
+  output.
+
+## Custom IME correction
+
+The legacy visible BotIme was taller than ADBKeyboard. Opening it moved the
+input row from approximately `y=2292` to `y=1940`, more than the Python
+adapter's 250px search limit. Route B therefore searches 450px around the
+anchor. Route C no longer shows the input view, so the row keeps its normal
+position.
+
+Green send coordinates observed with the legacy visible BotIme:
+
+```text
+(984, 1966)
+```
+
+## Verification
+
+- Dry-run input test: reply split into two parts, first part reached the input
+  box, green send button appeared, text was cleared, keyboard hidden, Baidu IME
+  restored, and no send tap occurred.
+- Live self-chat test: one `链路测试` bubble was sent to File Transfer Assistant.
+- The File Transfer Assistant now contains local test artifacts only; no other
+  contact was used.
+- The later clear hardening used `InputConnection.deleteSurroundingText`,
+  followed by a screenshot check that the send button disappeared, and passed a
+  second dry-run.
+
+## Not yet implemented
+
+- Search and vision steps.
