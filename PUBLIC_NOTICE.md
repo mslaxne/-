@@ -3,9 +3,11 @@
 Handora is an experimental Android automation prototype. It is not affiliated
 with, endorsed by, or supported by Tencent or WeChat.
 
-The repository contains source code and verification fixtures only. It does not
-publish an APK release. Builds produced by contributors are responsible for
-their own signing, distribution, support, and update process.
+The repository contains source code and verification fixtures. Test APKs may be
+published through GitHub Releases as pre-release artifacts with explicit
+warnings and checksums. They are not stable production releases. Builds
+produced by contributors are responsible for their own signing, distribution,
+support, and update process.
 
 Use the software only with accounts and devices you own or are explicitly
 authorized to operate. Screen capture, Accessibility, input-method automation,

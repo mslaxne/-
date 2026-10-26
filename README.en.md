@@ -8,10 +8,11 @@ custom input method. Device actions support both the existing Shizuku transport
 and a first-stage route-C Accessibility transport. Auto-send is off by default.
 
 > This is a public source repository, not an official Tencent or WeChat product.
-> APK files are intentionally not distributed through this repository. Use the
-> software only with accounts and devices you are authorized to operate, and
-> comply with WeChat terms, local law, and Accessibility-service rules. Do not
-> use it for harassment, spam, impersonation, or non-consensual automation.
+> APK files are not committed to source control; test builds may be distributed
+> through GitHub Releases. Use the software only with accounts and devices you
+> are authorized to operate, and comply with WeChat terms, local law, and
+> Accessibility-service rules. Do not use it for harassment, spam,
+> impersonation, or non-consensual automation.
 
 ## Capabilities
 
