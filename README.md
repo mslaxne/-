@@ -2,7 +2,7 @@
 
 [English](README.en.md) | 简体中文
 
-这是一个面向安卓系统、用于微信消息接管的侧载原型，目前测试过vivo Android 13/One Plus Android 15都可正常运行。应用读取屏幕内容，
+这是一个面向安卓系统、用于微信消息接管的侧载原型，可在你接到消息时让AI根据记忆和你设定的人设回复消息，支持自己手动编辑记忆和设定人格，采用A0-A3的4级记忆系统，在代理会话结束后AI会自行整理写入记忆，A0的冲突记忆会提交到人工审核，目前测试过vivo Android 13/One Plus Android 15都可正常运行。应用读取屏幕内容，
 调用LLM回复，并使用自定义输入法写入和发送。设备操作同时支持现有
 Shizuku 传输和第一阶段 Route C 无障碍传输。要用请下载最新发布版本，老旧版本会有一些bug
 
@@ -19,7 +19,7 @@ Shizuku 传输和第一阶段 Route C 无障碍传输。要用请下载最新发
 
 ## 下载 APK
 
-- [下载 1.0.129 Route C 测试版](https://github.com/mslaxne/handora-android-public/releases/tag/v1.0.129-test.1)，我没有其他手机了，希望能得到各位的测试反馈
+- [下载 1.0.129 Route C 测试版](https://github.com/mslaxne/handora-android-public/releases/tag/v1.0.129-test.1)，我没有其他手机了，希望能得到各位的测试反馈，欢迎技术交流
 - 该构建使用 Android 开发/调试证书签名
 - 问题反馈请提供设备型号、Android 版本、微信版本、App 版本和复现步骤；
   不要上传 API Key、聊天内容或其他敏感数据。
@@ -164,7 +164,11 @@ app/build/outputs/apk/routeB/release/app-routeB-release.apk
    后台活动。
 8. 在目标 vivo 构建上保持应用无障碍服务开启，作为后台保活。Route C 使用它
    完成截图和手势。
+   
+## 安全风险
 
+- 程序使用OCR轮询读屏并用无障碍操作手机回复，可能有账号风险
+  
 ## Route B 回退构建
 
 安装并启动 Shizuku 13.6.0 或更高版本，然后使用应用中的
@@ -191,3 +195,4 @@ Route C 不会选择或恢复输入法。如果 BotIme 不是当前默认输入�
 
 通过“模型配置”设置密钥。密钥使用 Android Keystore 加密，绝不会
 从本仓库或 `.env` 文件读取。
+
