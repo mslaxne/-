@@ -17,10 +17,10 @@ Shizuku 传输和第一阶段 Route C 无障碍传输。要用请下载最新发
   开启代理后切回聊天界面即可。建议开启悬浮球功能，方便控制暂停或停止。
   
 
-## 测试 APK
+## 下载 APK
 
-- [下载 1.0.129 Route C 测试版](https://github.com/mslaxne/handora-android-public/releases/tag/v1.0.129-test.1)
-- 该构建使用 Android 开发/调试证书签名，只用于测试反馈，不是稳定正式版。
+- [下载 1.0.129 Route C 测试版](https://github.com/mslaxne/handora-android-public/releases/tag/v1.0.129-test.1)，我没有其他手机了，希望能得到各位的测试反馈
+- 该构建使用 Android 开发/调试证书签名
 - 问题反馈请提供设备型号、Android 版本、微信版本、App 版本和复现步骤；
   不要上传 API Key、聊天内容或其他敏感数据。
 
