@@ -50,6 +50,12 @@ Implemented Android foundation:
   completion;
 - scoped retrieval assembles A0/A1/A2 context with query matching and captured
   deletion epoch without reinforcing evidence.
+- startup reply context merges persisted session history with the visible screen
+  transcript but does not bulk-import old visible messages into memory;
+- the triggering incoming message uses a deterministic client message ID derived
+  from the startup snapshot so retries and process restarts are idempotent;
+- pending conflicts are supplied as context only. The reply path does not
+  generate a per-turn conflict verdict, recommended reply or replacement text;
 - validated non-empty extraction and summary batches commit atomically:
   extraction candidates become A1/A2 records; summary events become A2 records;
   A3 working summary/version and coverage are updated in the same transaction.

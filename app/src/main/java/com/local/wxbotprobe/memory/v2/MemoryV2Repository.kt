@@ -252,6 +252,19 @@ class MemoryV2Repository(
         }
     }
 
+    fun hasClientMessage(
+        scopeId: String,
+        clientMessageId: String,
+    ): Boolean {
+        if (clientMessageId.isBlank()) {
+            return false
+        }
+        return database.readableDatabase.rawQuery(
+            "SELECT 1 FROM messages WHERE scope_id=? AND client_message_id=? LIMIT 1",
+            arrayOf(scopeId, clientMessageId),
+        ).use { it.moveToFirst() }
+    }
+
     fun closeSession(
         scope: TrustedScopeContext,
         sessionId: String,

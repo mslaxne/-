@@ -12,7 +12,7 @@ body:
     id: app_version
     attributes:
       label: Handora app version
-      placeholder: "1.0.128 (152)"
+      placeholder: "1.0.129 (153)"
     validations:
       required: true
   - type: input

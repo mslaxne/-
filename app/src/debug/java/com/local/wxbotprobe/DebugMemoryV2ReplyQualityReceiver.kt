@@ -7,7 +7,6 @@ import com.local.wxbotprobe.api.ModelClientFactory
 import com.local.wxbotprobe.bot.ChatMessage
 import com.local.wxbotprobe.bot.ConversationStore
 import com.local.wxbotprobe.bot.IncomingMessage
-import com.local.wxbotprobe.bot.MemoryConflictClarificationMarker
 import com.local.wxbotprobe.bot.PersonaData
 import com.local.wxbotprobe.bot.PersonaText
 import com.local.wxbotprobe.bot.ReplyConfig
@@ -133,10 +132,7 @@ class DebugMemoryV2ReplyQualityReceiver : BroadcastReceiver() {
             options = options,
             pendingConflicts = conflicts,
         )
-        val memoryContext = MemoryConflictClarificationMarker.wrap(
-            MemoryV2ReplyContextPolicy.render(layers, options),
-            layers.preflightConflict?.clarification,
-        )
+        val memoryContext = MemoryV2ReplyContextPolicy.render(layers, options)
         val startedAt = System.currentTimeMillis()
         val engine = ReplyEngine(
             config = ReplyConfig(
@@ -171,7 +167,7 @@ class DebugMemoryV2ReplyQualityReceiver : BroadcastReceiver() {
             .put("message", case.message)
             .put("memory_text", case.memoryText)
             .put("pending_conflict", case.pendingConflict)
-            .put("preflight_clarification", layers.preflightConflict?.clarification ?: JSONObject.NULL)
+            .put("preflight_clarification", JSONObject.NULL)
             .put("reply", reply.text)
             .put("model", reply.model)
             .put("error", reply.error)

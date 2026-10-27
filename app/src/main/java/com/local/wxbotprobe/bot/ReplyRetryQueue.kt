@@ -68,10 +68,30 @@ class ReplyRetryStore(
         text: String,
         isGroup: Boolean,
         nowMillis: Long = System.currentTimeMillis(),
+        taskId: String? = null,
     ): ReplyRetryTask {
         require(text.isNotBlank()) { "retry text is required" }
+        val resolvedId = taskId?.also {
+            require(it.isNotBlank()) { "task id must not be blank" }
+        } ?: "$nowMillis-${UUID.randomUUID()}"
+        find(resolvedId)?.let { existing ->
+            if (taskId == null) {
+                return existing
+            }
+            val refreshed = existing.copy(
+                sourceFile = sourceFile,
+                chatTitle = chatTitle,
+                chatFingerprint = chatFingerprint,
+                conversationKey = conversationKey,
+                text = text,
+                isGroup = isGroup,
+                updatedAt = maxOf(nowMillis, existing.updatedAt),
+            )
+            save(refreshed)
+            return refreshed
+        }
         val task = ReplyRetryTask(
-            id = "$nowMillis-${UUID.randomUUID()}",
+            id = resolvedId,
             sourceFile = sourceFile,
             chatTitle = chatTitle,
             chatFingerprint = chatFingerprint,

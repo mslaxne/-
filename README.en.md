@@ -16,7 +16,7 @@ and a first-stage route-C Accessibility transport. Auto-send is off by default.
 
 ## Test APK
 
-- [Download the 1.0.128 Route C test build](https://github.com/mslaxne/handora-android-public/releases/tag/v1.0.128-test.1)
+- [Download the 1.0.129 Route C test build](https://github.com/mslaxne/handora-android-public/releases/tag/v1.0.129-test.1)
 - The APK is signed with an Android development/debug certificate. It is a
   feedback build, not a stable production release.
 - Include the device model, Android version, WeChat version, app version, and
@@ -51,7 +51,16 @@ and a first-stage route-C Accessibility transport. Auto-send is off by default.
   delivery run on a serialized action worker. Device screenshots and sends
   share a lock so send-time keyboard movement does not contaminate OCR.
 - Foreground polling, baseline suppression and three-second burst collection.
-- Persona-aware DeepSeek reply generation with identity/injection guardrails.
+- Persona-aware DeepSeek reply generation. Identity, roleplay and prompt-injection
+  boundaries are prompt-only; model text is not replaced with keyword-triggered
+  canned replies.
+- After an explicit Agent start or resume, the first stable screen is evaluated.
+  When the bottom message is incoming, persisted session history is merged and
+  deduplicated with the visible screen transcript before generation. An outgoing
+  or unknown bottom message does not trigger a proactive reply.
+- Startup snapshots use a deterministic ID. Unsent, pending and partially sent
+  replies are reused without another model call; unknown or failed deliveries
+  require manual review.
 - Persistent reply-generation retries for model errors, with five bounded
   attempts, 5/10/20/40-second backoff and a visible Home queue count.
 - Auto-send hard limits: normalized contact whitelist, daily sent-bubble cap,

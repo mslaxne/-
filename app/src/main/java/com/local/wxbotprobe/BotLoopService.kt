@@ -14,8 +14,10 @@ import android.os.Looper
 import android.os.SystemClock
 import com.local.wxbotprobe.chat.GroupTitleWarningPolicy
 import com.local.wxbotprobe.chat.ChatIdentityPolicy
+import com.local.wxbotprobe.chat.BubbleKind
 import com.local.wxbotprobe.chat.ScreenSnapshot
 import com.local.wxbotprobe.chat.OutgoingConfirmationTracker
+import com.local.wxbotprobe.chat.StartupConversationContextBuilder
 import com.local.wxbotprobe.loop.DeviceActionGate
 import com.local.wxbotprobe.loop.MemoryCoordinator
 import com.local.wxbotprobe.loop.PollLivenessPolicy
@@ -49,6 +51,9 @@ class BotLoopService : Service() {
     private val wakeAfterSend = AtomicBoolean(false)
     private val schedulerLock = Any()
     private val mainHandler = Handler(Looper.getMainLooper())
+
+    @Volatile
+    private var startupEvaluationPending = false
 
     @Volatile
     private var running = false
@@ -288,6 +293,7 @@ class BotLoopService : Service() {
         }
         groupTitleWarningIssued = false
         running = true
+        startupEvaluationPending = true
         updateRunState(AgentRunPolicy.next(runState, AgentRunAction.START))
         replyCoordinator.beginRun()
         ProbeStatus.write(this, "读屏监控启动，正在建立基线。")
@@ -333,8 +339,10 @@ class BotLoopService : Service() {
             }
         }
         ensureForeground("正在恢复读屏")
+        pollingCoordinator.resetForStartupEvaluation()
         groupTitleWarningIssued = false
         running = true
+        startupEvaluationPending = true
         updateRunState(AgentRunPolicy.next(runState, AgentRunAction.RESUME))
         replyCoordinator.beginRun()
         updateNotification("代理已继续")
@@ -446,7 +454,9 @@ class BotLoopService : Service() {
         if (!AgentRunPolicy.canPoll(runState, running)) {
             return false
         }
-        val snapshot = pollingCoordinator.capture() ?: return false
+        val snapshot = pollingCoordinator.capture(
+            forceOcr = startupEvaluationPending,
+        ) ?: return false
         outgoingConfirmation.observe(
             chatFingerprint = snapshot.chat.fingerprint,
             items = snapshot.items,
@@ -499,6 +509,7 @@ class BotLoopService : Service() {
                 }
             }
         }
+        maybeEvaluateStartup(snapshot)
         scheduleCoordination(snapshot)
         if (reading.recheckSoon) {
             pollingCoordinator.auditSuspiciousFrame(snapshot)
@@ -510,6 +521,62 @@ class BotLoopService : Service() {
             dispatchCompletedBurst(snapshot, completed)
         }
         return reading.recheckSoon
+    }
+
+    private fun maybeEvaluateStartup(snapshot: ScreenSnapshot) {
+        if (!startupEvaluationPending) {
+            return
+        }
+        startupEvaluationPending = false
+        if (!memoryCoordinator.isReady) {
+            log("startup context skipped memory not ready")
+            ProbeStatus.write(this, "首屏上下文未读取：聊天记忆尚未建立。")
+            return
+        }
+        val contactId = memoryCoordinator.chatId
+        if (contactId.isNullOrBlank()) {
+            log("startup context skipped contact missing")
+            return
+        }
+        val startup = StartupConversationContextBuilder.build(snapshot, contactId)
+        if (startup == null) {
+            log("startup context skipped no readable messages")
+            return
+        }
+        if (!startup.shouldRespond) {
+            log(
+                "startup context skipped last kind=${startup.lastMessageKind.name.lowercase()} " +
+                    "textLength=${startup.lastMessageText.length}",
+            )
+            ProbeStatus.write(
+                this,
+                if (startup.lastMessageKind == BubbleKind.OUT) {
+                    "首屏最下方是自己发送的消息，不主动回复。"
+                } else {
+                    "首屏最下方消息无法确认来源，不主动回复。"
+                },
+            )
+            return
+        }
+        runCatching {
+            replyCoordinator.prepareStartupConversation(
+                startup = startup,
+                chatTitle = snapshot.chat.title,
+                chatFingerprint = snapshot.chat.fingerprint,
+                conversationKey = snapshot.chat.conversationKey,
+                onNewConversation = {
+                    memoryCoordinator.recordIncoming(
+                        text = startup.lastMessageText,
+                        nowMillis = System.currentTimeMillis(),
+                        clientMessageId = "startup-user-${startup.snapshotId}",
+                    )
+                },
+            )
+        }.onFailure {
+            startupEvaluationPending = true
+            log("startup context preparation failed: ${it.stackTraceToString()}")
+            ProbeStatus.write(this, "首屏上下文处理失败：${it.message}")
+        }
     }
 
     private fun dispatchCompletedBurst(

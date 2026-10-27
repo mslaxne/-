@@ -8,7 +8,6 @@ import com.local.wxbotprobe.api.ModelSettings
 import com.local.wxbotprobe.bot.ConversationStore
 import com.local.wxbotprobe.bot.ChatMessage
 import com.local.wxbotprobe.bot.IncomingMessage
-import com.local.wxbotprobe.bot.MemoryConflictClarificationMarker
 import com.local.wxbotprobe.bot.PersonaSelectionService
 import com.local.wxbotprobe.bot.PersonaText
 import com.local.wxbotprobe.bot.ReplyConfig
@@ -86,10 +85,7 @@ class DebugDeepSeekProbeReceiver : BroadcastReceiver() {
                             id = "debug-deepseek-${System.currentTimeMillis()}",
                             text = probeText,
                         ),
-                        memoryContext = MemoryConflictClarificationMarker.wrap(
-                            replyContext.memoryText,
-                            replyContext.conflictClarification,
-                        ),
+                        memoryContext = replyContext.memoryText,
                         conversationHistory = conversation,
                         commitReply = false,
                     )

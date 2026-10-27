@@ -6,7 +6,6 @@ import com.local.wxbotprobe.bot.ConversationStore
 import com.local.wxbotprobe.bot.ChatMessage
 import com.local.wxbotprobe.bot.ChatClient
 import com.local.wxbotprobe.bot.IncomingMessage
-import com.local.wxbotprobe.bot.MemoryConflictClarificationMarker
 import com.local.wxbotprobe.bot.PersonaData
 import com.local.wxbotprobe.bot.PersonaProfileCodec
 import com.local.wxbotprobe.bot.PersonaText
@@ -15,9 +14,12 @@ import com.local.wxbotprobe.bot.ReplyEngine
 import com.local.wxbotprobe.bot.ReplyRetryStatus
 import com.local.wxbotprobe.bot.ReplyRetryStore
 import com.local.wxbotprobe.bot.ReplyRetryTask
+import com.local.wxbotprobe.bot.ReplyConversationMergePolicy
 import com.local.wxbotprobe.bot.RoleplayPolicyService
 import com.local.wxbotprobe.chat.CompletedBurst
+import com.local.wxbotprobe.chat.StartupConversationContext
 import com.local.wxbotprobe.memory.v2.ReplyContextPayload
+import com.local.wxbotprobe.send.DeliveryStatus
 import java.io.File
 import java.io.FileOutputStream
 import java.nio.file.Files
@@ -136,6 +138,226 @@ class ReplyGenerationCoordinator(
         )
     }
 
+    fun prepareStartupConversation(
+        startup: StartupConversationContext,
+        chatTitle: String,
+        chatFingerprint: Long,
+        conversationKey: String,
+        onNewConversation: () -> Unit,
+    ): Boolean {
+        if (!startup.shouldRespond) {
+            onLog("startup context ignored: last message is not readable incoming")
+            return false
+        }
+        if (!acceptingWork.get() || !canAutoSend()) {
+            onLog("startup context ignored agent inactive")
+            return false
+        }
+        val replyFile = replyFileFor(startup.taskId)
+        val stored = readStoredReply(replyFile)
+        val existingTask = retryStore.find(startup.taskId)
+        val existingDelivery = sendQueue.findDelivery(startup.taskId)
+        if (existingTask?.status == ReplyRetryStatus.FAILED) {
+            onStatus("首屏回复生成已失败，需要人工检查后再处理。")
+            onNotification("首屏回复生成失败，需人工处理")
+            onLog("startup context generation failed id=${startup.snapshotId}")
+            return false
+        }
+        when (existingDelivery?.status) {
+            DeliveryStatus.SENT -> {
+                onStatus("首屏回复此前已经发送，本次不再处理。")
+                onLog("startup context delivery already sent id=${startup.snapshotId}")
+                return false
+            }
+            DeliveryStatus.UNKNOWN,
+            DeliveryStatus.FAILED,
+            -> {
+                onStatus("首屏回复需要人工检查，本次不会自动重发。")
+                onNotification("首屏回复需人工处理")
+                onLog(
+                    "startup context delivery manual review id=${startup.snapshotId} " +
+                        "status=${existingDelivery.status.name.lowercase()}",
+                )
+                return false
+            }
+            else -> Unit
+        }
+        if (existingDelivery != null && existingDelivery.waiting) {
+            sendQueue.retargetDelivery(
+                id = startup.taskId,
+                chatFingerprint = chatFingerprint,
+                conversationKey = conversationKey,
+            )
+        }
+        if (existingDelivery != null && stored == null) {
+            onStatus("首屏回复队列存在但正文文件缺失，需要人工检查。")
+            onNotification("首屏回复需人工处理")
+            onLog(
+                "startup context missing reply file id=${startup.snapshotId} " +
+                    "delivery=${existingDelivery.id} " +
+                    "status=${existingDelivery.status.name.lowercase()}",
+            )
+            return false
+        }
+        when (StoredReplyRecoveryPolicy.decide(stored?.deliveryStatus)) {
+            StoredReplyDisposition.SKIP -> {
+                onStatus("首屏上下文此前已经处理，本次不再回复。")
+                onLog(
+                    "startup context skipped id=${startup.snapshotId} " +
+                        "status=${stored?.deliveryStatus.orEmpty()}",
+                )
+                return false
+            }
+            StoredReplyDisposition.MANUAL_REVIEW -> {
+                onStatus("首屏回复需要人工检查，本次不会自动重发。")
+                onNotification("首屏回复需人工处理")
+                onLog(
+                    "startup context manual review id=${startup.snapshotId} " +
+                        "status=${stored?.deliveryStatus.orEmpty()}",
+                )
+                return false
+            }
+            StoredReplyDisposition.REUSE,
+            StoredReplyDisposition.ABSENT,
+            -> Unit
+        }
+
+        val isNewConversation = stored == null &&
+            existingDelivery == null &&
+            existingTask == null
+        if (isNewConversation) {
+            onNewConversation()
+        }
+        val source = File(
+            context.getExternalFilesDir(null) ?: context.filesDir,
+            "inbox/startup-${startup.snapshotId}.json",
+        )
+        writeStartupSource(
+            output = source,
+            startup = startup,
+            chatTitle = chatTitle,
+            chatFingerprint = chatFingerprint,
+            conversationKey = conversationKey,
+        )
+        val task = synchronized(workLock) {
+            if (!acceptingWork.get() || !canAutoSend()) {
+                null
+            } else {
+                retryStore.enqueue(
+                    sourceFile = source.absolutePath,
+                    chatTitle = chatTitle,
+                    chatFingerprint = chatFingerprint,
+                    conversationKey = conversationKey,
+                    text = startup.lastMessageText,
+                    isGroup = startup.isGroup,
+                    taskId = startup.taskId,
+                )
+            }
+        }
+        if (task == null) {
+            onLog("startup context cancelled before reply task enqueue")
+            return false
+        }
+        updateSourceRetry(source, task)
+        val reused = !isNewConversation
+        onStatus(
+            if (reused) {
+                "首屏上下文已恢复，正在复用未发送回复。"
+            } else {
+                "首屏上下文已读取，正在生成回复。"
+            },
+        )
+        onNotification(if (reused) "正在恢复首屏回复" else "正在生成首屏回复")
+        onLog(
+            "startup context prepared id=${startup.snapshotId} " +
+                "visible=${startup.messages.size} task=${task.id} reused=$reused " +
+                "file=${source.absolutePath}",
+        )
+        return true
+    }
+
+    private fun writeStartupSource(
+        output: File,
+        startup: StartupConversationContext,
+        chatTitle: String,
+        chatFingerprint: Long,
+        conversationKey: String,
+    ) {
+        val directory = output.parentFile
+            ?: throw IllegalStateException("startup source directory is unavailable")
+        if (!directory.exists() && !directory.mkdirs()) {
+            throw IllegalStateException("无法创建首屏上下文目录")
+        }
+        val root = JSONObject()
+            .put("schemaVersion", 1)
+            .put("kind", "startup")
+            .put("snapshotId", startup.snapshotId)
+            .put("receivedAt", System.currentTimeMillis())
+            .put("isGroup", startup.isGroup)
+            .put("chatTitle", chatTitle)
+            .put("conversationKey", conversationKey)
+            .put("chatFingerprint", java.lang.Long.toHexString(chatFingerprint))
+            .put("text", startup.lastMessageText)
+            .put(
+                "items",
+                JSONArray().apply {
+                    startup.messages.forEach {
+                        put(
+                            JSONObject()
+                                .put("role", it.role)
+                                .put("text", it.text),
+                        )
+                    }
+                },
+            )
+        val temporary = File(directory, "${output.name}.tmp")
+        FileOutputStream(temporary).use {
+            it.write(root.toString(2).toByteArray(Charsets.UTF_8))
+            it.fd.sync()
+        }
+        Files.move(
+            temporary.toPath(),
+            output.toPath(),
+            StandardCopyOption.REPLACE_EXISTING,
+            StandardCopyOption.ATOMIC_MOVE,
+        )
+    }
+
+    private fun readStartupPrompt(source: File): StartupPrompt? {
+        if (!source.isFile) {
+            return null
+        }
+        val root = runCatching { JSONObject(source.readText()) }.getOrNull()
+            ?: throw IllegalStateException("首屏上下文文件无法解析：${source.absolutePath}")
+        if (root.optString("kind") != "startup") {
+            return null
+        }
+        if (root.optInt("schemaVersion", 0) != 1) {
+            throw IllegalStateException("首屏上下文版本不支持：${source.absolutePath}")
+        }
+        val snapshotId = root.optString("snapshotId")
+        if (snapshotId.isBlank()) {
+            throw IllegalStateException("首屏上下文缺少 snapshotId：${source.absolutePath}")
+        }
+        val items = root.optJSONArray("items")
+            ?: throw IllegalStateException("首屏上下文缺少消息：${source.absolutePath}")
+        val messages = buildList {
+            for (index in 0 until items.length()) {
+                val item = items.optJSONObject(index) ?: continue
+                val role = item.optString("role")
+                val text = item.optString("text")
+                if (role !in setOf("user", "assistant") || text.isBlank()) {
+                    continue
+                }
+                add(ChatMessage(role, text))
+            }
+        }
+        if (messages.isEmpty() || messages.last().role != "user") {
+            throw IllegalStateException("首屏上下文消息顺序无效：${source.absolutePath}")
+        }
+        return StartupPrompt(snapshotId = snapshotId, messages = messages)
+    }
+
     fun drainRetries(
         chatTitle: String,
         chatFingerprint: Long,
@@ -207,25 +429,40 @@ class ReplyGenerationCoordinator(
             return
         }
         val replyFile = replyFileFor(generationId)
-        readStoredReply(replyFile)?.let { stored ->
-            when (stored.deliveryStatus) {
-                "sent" -> {
-                    onStatus("回复此前已发送，恢复任务已结束。")
-                    onLog("reply recovery skipped status=sent id=$generationId")
+        val existingReply = readStoredReply(replyFile)
+        if (existingReply != null) {
+            when (StoredReplyRecoveryPolicy.decide(existingReply.deliveryStatus)) {
+                StoredReplyDisposition.SKIP -> {
+                    if (existingReply.deliveryStatus.equals("sent", ignoreCase = true)) {
+                        onStatus("回复此前已发送，恢复任务已结束。")
+                        onLog("reply recovery skipped status=sent id=$generationId")
+                    } else {
+                        onStatus("重复回复此前已抑制，恢复任务已结束。")
+                        onLog(
+                            "reply recovery skipped " +
+                                "status=${existingReply.deliveryStatus} id=$generationId",
+                        )
+                    }
                     retryTask?.let { retryStore.remove(it.id) }
                     return
                 }
-                "duplicate_suppressed" -> {
-                    onStatus("重复回复此前已抑制，恢复任务已结束。")
-                    onLog("reply recovery skipped status=duplicate_suppressed id=$generationId")
+                StoredReplyDisposition.MANUAL_REVIEW -> {
+                    onStatus(
+                        "回复状态为 ${existingReply.deliveryStatus}，需要人工检查后再处理。",
+                    )
+                    onNotification("回复需要人工检查")
+                    onLog(
+                        "reply manual review status=${existingReply.deliveryStatus} " +
+                            "id=$generationId file=${replyFile.absolutePath}",
+                    )
                     retryTask?.let { retryStore.remove(it.id) }
                     return
                 }
-                else -> {
+                StoredReplyDisposition.REUSE -> {
                     onStatus("正在恢复已生成的回复，不再重复调用模型。")
                     onLog("reply reused id=$generationId file=${replyFile.absolutePath}")
                     deliverStoredReply(
-                        stored = stored,
+                        stored = existingReply,
                         source = source,
                         replyFile = replyFile,
                         generationId = generationId,
@@ -236,8 +473,10 @@ class ReplyGenerationCoordinator(
                     retryTask?.let { retryStore.remove(it.id) }
                     return
                 }
+                StoredReplyDisposition.ABSENT -> Unit
             }
         }
+        val startupPrompt = readStartupPrompt(source)
 
         val engine = replyEngine(persona, contactId, personaId)
         if (engine == null) {
@@ -274,37 +513,58 @@ class ReplyGenerationCoordinator(
         } else {
             onNotification("正在生成回复")
         }
+        val incoming = IncomingMessage(
+            id = startupPrompt?.let {
+                "startup-${it.snapshotId}-${retryTask?.attempts ?: 0}"
+            } ?: "android-${System.currentTimeMillis()}-${retryTask?.attempts ?: 0}",
+            text = text,
+            isGroup = isGroup,
+            senderName = "对方",
+            nowSeconds = System.currentTimeMillis() / 1000.0,
+        )
+        val memoryContext = replyContext.memoryText
+        val persistedConversation = if (replyContext.includesConversation) {
+            replyContext.conversationMessages.map {
+                ChatMessage(it.role, it.text)
+            }
+        } else {
+            emptyList()
+        }
+        val conversationHistory = startupPrompt?.let {
+            ReplyConversationMergePolicy.merge(
+                persisted = persistedConversation,
+                visible = it.messages,
+            )
+        } ?: persistedConversation.takeIf { it.isNotEmpty() }
         onLog(
             "reply context mode=${replyContext.mode.storedValue} " +
                 "bytes=${replyContext.memoryText.toByteArray(Charsets.UTF_8).size} " +
-                "messages=${replyContext.conversationMessages.size} " +
+                "persistedMessages=${replyContext.conversationMessages.size} " +
+                "historyMessages=${conversationHistory?.size ?: 0} " +
+                "startupVisibleMessages=${startupPrompt?.messages?.size ?: 0} " +
                 "provider=${replyContext.providerId} " +
                 "window=${replyContext.providerWindowTokens} " +
                 "budgetOmitted=${replyContext.budgetOmittedMessageCount} " +
-                "snapshot=${replyContext.snapshotSha256?.take(12).orEmpty()}",
+                "snapshot=${replyContext.snapshotSha256?.take(12).orEmpty()} " +
+                "startup=${startupPrompt != null}",
         )
-        val result = engine.handle(
-            IncomingMessage(
-                id = "android-${System.currentTimeMillis()}-${retryTask?.attempts ?: 0}",
-                text = text,
-                isGroup = isGroup,
-                senderName = "对方",
-                nowSeconds = System.currentTimeMillis() / 1000.0,
-            ),
-            conversationId = conversationId,
-            memoryContext = MemoryConflictClarificationMarker.wrap(
-                replyContext.memoryText,
-                replyContext.conflictClarification,
-            ),
-            conversationHistory = if (replyContext.includesConversation) {
-                replyContext.conversationMessages.map {
-                    ChatMessage(it.role, it.text)
-                }
-            } else {
-                null
-            },
-            commitReply = false,
-        )
+        val result = if (startupPrompt != null) {
+            engine.handleColdStart(
+                incoming,
+                conversationId,
+                memoryContext,
+                conversationHistory,
+                commitReply = false,
+            )
+        } else {
+            engine.handle(
+                incoming,
+                conversationId,
+                memoryContext,
+                conversationHistory,
+                commitReply = false,
+            )
+        }
         if (!acceptingWork.get() || !canAutoSend()) {
             retryTask?.let { retryStore.remove(it.id) }
             onLog("reply generation discarded after stop id=$generationId")
@@ -362,7 +622,7 @@ class ReplyGenerationCoordinator(
             return
         }
 
-        val stored = StoredReply(
+        val generatedReply = StoredReply(
             text = result.text,
             model = result.model,
             latencyMs = result.latencyMs,
@@ -376,18 +636,20 @@ class ReplyGenerationCoordinator(
             chatTitle = chatTitle,
             chatFingerprint = chatFingerprint,
             conversationKey = conversationKey,
-            stored = stored,
+            stored = generatedReply,
             replyContext = replyContext,
+            startupPrompt = startupPrompt,
         )
         onStatus("回复已生成，未发送：${replyFile.absolutePath}")
         onNotification("回复已生成，等待发送")
         onLog(
-            "reply generated chars=${stored.text.length} model=${stored.model} " +
-                "latency=${stored.latencyMs} file=${replyFile.absolutePath} " +
+            "reply generated chars=${generatedReply.text.length} " +
+                "model=${generatedReply.model} latency=${generatedReply.latencyMs} " +
+                "file=${replyFile.absolutePath} " +
                 "generation=$generationId",
         )
         deliverStoredReply(
-            stored = stored,
+            stored = generatedReply,
             source = source,
             replyFile = replyFile,
             generationId = generationId,
@@ -512,6 +774,7 @@ class ReplyGenerationCoordinator(
         conversationKey: String,
         stored: StoredReply,
         replyContext: ReplyContextPayload,
+        startupPrompt: StartupPrompt?,
     ) {
         val output = replyFileFor(generationId)
         if (output.isFile) {
@@ -543,6 +806,8 @@ class ReplyGenerationCoordinator(
                 replyContext.budgetOmittedMessageCount,
             )
             .put("replyContextSnapshot", replyContext.snapshotSha256.orEmpty())
+            .put("startupSnapshotId", startupPrompt?.snapshotId.orEmpty())
+            .put("startupVisibleMessages", startupPrompt?.messages?.size ?: 0)
         val temporary = File(output.parentFile, "${output.name}.tmp")
         FileOutputStream(temporary).use {
             it.write(root.toString(2).toByteArray(Charsets.UTF_8))
@@ -662,6 +927,11 @@ class ReplyGenerationCoordinator(
         val promptTokens: Int,
         val completionTokens: Int,
         val deliveryStatus: String,
+    )
+
+    private data class StartupPrompt(
+        val snapshotId: String,
+        val messages: List<ChatMessage>,
     )
 
     companion object {

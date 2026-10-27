@@ -40,6 +40,36 @@ class ReplyRetryQueueTest {
     }
 
     @Test
+    fun `deterministic task id reuses the existing generation task`() {
+        val retryStore = store()
+        val first = retryStore.enqueue(
+            sourceFile = "/tmp/startup.json",
+            chatTitle = "联系人",
+            chatFingerprint = 42L,
+            conversationKey = "chat",
+            text = "在吗",
+            isGroup = false,
+            nowMillis = 1_000L,
+            taskId = "startup-snapshot-1",
+        )
+        val second = retryStore.enqueue(
+            sourceFile = "/tmp/startup.json",
+            chatTitle = "联系人",
+            chatFingerprint = 99L,
+            conversationKey = "chat",
+            text = "在吗",
+            isGroup = false,
+            nowMillis = 2_000L,
+            taskId = first.id,
+        )
+
+        assertEquals(first.id, second.id)
+        assertEquals(99L, second.chatFingerprint)
+        assertEquals(1, retryStore.all().size)
+        assertEquals(first.id, retryStore.nextReady(99L, 3_000L)?.id)
+    }
+
+    @Test
     fun `new burst is immediately recoverable before its first generation`() {
         val task = queued(store())
         val recovered = store().nextReady(42L, 1_000L)

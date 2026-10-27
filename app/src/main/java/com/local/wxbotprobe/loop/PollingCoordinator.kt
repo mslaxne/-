@@ -61,7 +61,7 @@ class PollingCoordinator(
     private val auditScheduled = AtomicBoolean(false)
     private val auditClosed = AtomicBoolean(false)
 
-    fun capture(): ScreenSnapshot? {
+    fun capture(forceOcr: Boolean = false): ScreenSnapshot? {
         onLog("poll stage=start")
         if (!canPoll()) {
             onLog("poll stage=blocked agent-state")
@@ -139,6 +139,7 @@ class PollingCoordinator(
         val decodeMs = decodedAt - screenshotFinishedAt
         val fingerprintMs = fingerprintedAt - decodedAt
         if (
+            !forceOcr &&
             state.isPrimed &&
             previousFingerprint != null &&
             fingerprint.isSameScene(previousFingerprint) &&
@@ -170,7 +171,8 @@ class PollingCoordinator(
         }
         val ocrStartedAt = SystemClock.elapsedRealtime()
         val cachedSnapshot = lastSnapshot
-        val useFastRegion = state.isPrimed &&
+        val useFastRegion = !forceOcr &&
+            state.isPrimed &&
             cachedSnapshot != null &&
             cachedSnapshot.chat.fingerprint != 0L
         val baseSnapshot = try {
@@ -431,6 +433,10 @@ class PollingCoordinator(
         if (auditClosed.compareAndSet(false, true)) {
             auditExecutor.shutdownNow()
         }
+    }
+
+    fun resetForStartupEvaluation() {
+        resetForNewBaseline()
     }
 
     fun cachedSnapshot(): ScreenSnapshot? = lastSnapshot

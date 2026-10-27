@@ -67,6 +67,9 @@ class MemoryCoordinator(
     val chatId: String?
         get() = v2Session?.chatId
 
+    val isReady: Boolean
+        get() = v2Session != null
+
     val contextNote: String
         get() = replyContext.memoryText
 
@@ -100,8 +103,14 @@ class MemoryCoordinator(
     fun recordIncoming(
         text: String,
         nowMillis: Long,
+        clientMessageId: String? = null,
     ) {
-        recordV2(text, "user", nowMillis)
+        recordV2(
+            text = text,
+            role = "user",
+            nowMillis = nowMillis,
+            requestedClientMessageId = clientMessageId,
+        )
     }
 
     fun recordDeliveredParts(
@@ -109,7 +118,7 @@ class MemoryCoordinator(
         nowMillis: Long,
     ) {
         parts.filter { it.isNotBlank() }.forEach {
-            recordV2(it, "assistant", nowMillis)
+            recordV2(text = it, role = "assistant", nowMillis = nowMillis)
         }
     }
 
@@ -187,17 +196,29 @@ class MemoryCoordinator(
         text: String,
         role: String,
         nowMillis: Long,
+        requestedClientMessageId: String? = null,
     ) {
         if (text.isBlank()) {
             return
         }
         synchronized(MemoryOperationGate.lock) {
             val active = v2Session ?: return
+            if (
+                requestedClientMessageId != null &&
+                v2Repository.hasClientMessage(
+                    scopeId = active.scope.scopeId,
+                    clientMessageId = requestedClientMessageId,
+                )
+            ) {
+                onLog("memory v2 append deduplicated clientId=$requestedClientMessageId")
+                return
+            }
             val epochSeconds = nowMillis / 1_000L
             val appended = v2Repository.appendMessage(
                 active.scope,
                 AppendMessageRequest(
-                    clientMessageId = "live-${UUID.randomUUID()}",
+                    clientMessageId = requestedClientMessageId
+                        ?: "live-${UUID.randomUUID()}",
                     sessionId = active.binding.sessionId,
                     role = role,
                     text = text.trim(),

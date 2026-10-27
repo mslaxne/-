@@ -1,8 +1,8 @@
 # Handora security and privacy review
 
-Last reviewed: 2026-10-26.
+Last reviewed: 2026-10-27.
 
-Current candidate: `1.0.123` (147), Route C Release installed on vivo.
+Current source candidate: `1.0.129` (153). Device validation is still required.
 
 This is a focused static and release-artifact review, not a security
 certification. It covers backups, debug exports, API-key storage, chat-title
@@ -25,6 +25,15 @@ logging, runtime-artifact cleanup, proxy state and core exported services.
   permissions.
 
 ## Open product decisions
+
+### Startup visible-conversation context
+
+The startup path sends readable visible `IN`/`OUT` messages to the configured
+model when the bottom message is incoming. It merges those messages with the
+persisted current-session transcript and retains an app-private startup JSON
+snapshot. Identity, roleplay, prompt-injection and real-world capability rules
+are prompt-only: no deterministic post-check or fixed reply replacement exists.
+Those guarantees therefore depend on model compliance.
 
 ### P2: Runtime artifacts default to permanent retention
 

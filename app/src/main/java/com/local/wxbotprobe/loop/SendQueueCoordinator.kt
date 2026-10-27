@@ -52,6 +52,20 @@ class SendQueueCoordinator(
         store.recoverInterruptedSends()
     }
 
+    fun findDelivery(id: String): Delivery? = store.find(id)
+
+    fun retargetDelivery(
+        id: String,
+        chatFingerprint: Long,
+        conversationKey: String,
+    ): Delivery? {
+        return store.retarget(
+            id = id,
+            chatFingerprint = chatFingerprint,
+            conversationKey = conversationKey,
+        )
+    }
+
     fun enqueue(
         replyFile: File,
         replyText: String,

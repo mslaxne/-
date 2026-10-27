@@ -158,6 +158,23 @@ class DeliveryStoreTest {
     }
 
     @Test
+    fun `waiting delivery can be retargeted to a changed chat fingerprint`() {
+        val store = store()
+        val delivery = queued(store, fingerprint = 42L)
+
+        val updated = store.retarget(
+            id = delivery.id,
+            chatFingerprint = 99L,
+            conversationKey = "chat-99",
+            nowMillis = 2_000L,
+        )!!
+
+        assertEquals(99L, updated.chatFingerprint)
+        assertNull(store.nextReady(42L, 2_000L))
+        assertEquals(delivery.id, store.nextReady(99L, 2_000L)?.id)
+    }
+
+    @Test
     fun `interrupted send from a previous process requires review`() {
         val store = store()
         val delivery = queued(store)

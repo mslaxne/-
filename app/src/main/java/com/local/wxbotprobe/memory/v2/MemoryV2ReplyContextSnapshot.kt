@@ -65,13 +65,6 @@ data class MemoryV2ReplyContextConflict(
     val createdAt: Long,
 )
 
-data class MemoryV2ReplyPreflightConflict(
-    val memoryId: String,
-    val tier: String,
-    val existingText: String,
-    val clarification: String,
-)
-
 data class MemoryV2ReplyContextSessionCandidate(
     val sessionId: String,
     val state: String,
@@ -90,7 +83,6 @@ data class MemoryV2ReplyContextLayers(
     val sessionMessages: List<MemoryV2ReplyContextMessage>,
     val omittedMessageCount: Int,
     val pendingConflicts: List<MemoryV2ReplyContextConflict> = emptyList(),
-    val preflightConflict: MemoryV2ReplyPreflightConflict? = null,
 ) {
     val a2CollapsedCount: Int
         get() = a2Expanded
@@ -114,7 +106,6 @@ data class MemoryV2ReplyContextSnapshot(
     val budgetOmittedMessageCount: Int = 0,
     val providerId: String = "",
     val providerWindowTokens: Int = 0,
-    val conflictClarification: String? = null,
 )
 
 data class MemoryV2ReplyContextOptions(
@@ -231,10 +222,6 @@ object MemoryV2ReplyContextPolicy {
                 compareBy<MemoryV2ReplyContextConflict> { it.createdAt }
                     .thenBy { it.conflictId },
             ),
-            preflightConflict = detectPreflightConflict(
-                query = query,
-                memories = active,
-            ),
         )
     }
 
@@ -335,20 +322,6 @@ object MemoryV2ReplyContextPolicy {
                     append("。")
                     appendLine("在对方明确纠正前保留原记录。")
                 }
-            }
-            layers.preflightConflict?.let { conflict ->
-                appendLine()
-                appendLine("[本轮记忆冲突预检]")
-                append("- 当前说法可能与 ")
-                append(conflict.tier)
-                append(" 中的“")
-                append(conflict.existingText.trim())
-                appendLine("”冲突。")
-                appendLine(
-                    "本轮不得直接接受、确认或更新记忆；必须先提出自然澄清问题。",
-                )
-                append("建议回复：")
-                appendLine(conflict.clarification)
             }
             renderEventSection(
                 "A2 最近 ${options.exactRecentDays} 天",
@@ -499,60 +472,6 @@ object MemoryV2ReplyContextPolicy {
             .replace(Regex("[\\s\\p{Punct}，。！？、；：“”‘’（）【】《》]+"), "")
     }
 
-    private fun detectPreflightConflict(
-        query: String,
-        memories: List<MemoryV2ReplyContextMemory>,
-    ): MemoryV2ReplyPreflightConflict? {
-        if (
-            query.isBlank() ||
-            MemoryV2ConflictConfirmationPolicy.isExplicitCorrectionOrChange(
-                listOf(query),
-            ) ||
-            !NEGATIVE_PREFERENCE.containsMatchIn(query)
-        ) {
-            return null
-        }
-        val queryTerms = MemoryV2RetrievalPolicy.terms(query)
-            .filterNot { it in PREFERENCE_GENERIC_TERMS }
-            .toSet()
-        if (queryTerms.isEmpty()) {
-            return null
-        }
-        return memories
-            .asSequence()
-            .filter { it.tier in setOf("A0", "A1", "A2") }
-            .filter { it.predicate.startsWith("preference.") }
-            .filter { POSITIVE_PREFERENCE.containsMatchIn(it.text) }
-            .map { memory ->
-                val shared = queryTerms.count { term ->
-                    memory.text.contains(term, ignoreCase = true)
-                }
-                memory to shared
-            }
-            .filter { it.second > 0 }
-            .sortedWith(
-                compareByDescending<Pair<MemoryV2ReplyContextMemory, Int>> {
-                    it.second
-                }.thenByDescending { it.first.updatedAt }
-                    .thenBy { it.first.memoryId },
-            )
-            .firstOrNull()
-            ?.first
-            ?.let { memory ->
-                val statement = memory.text
-                    .replace("对方", "你")
-                    .removePrefix("你")
-                    .trim()
-                    .trimEnd('。', '！', '!')
-                MemoryV2ReplyPreflightConflict(
-                    memoryId = memory.memoryId,
-                    tier = memory.tier,
-                    existingText = memory.text,
-                    clarification = "我记得你之前说$statement，是我记错了吗？",
-                )
-            }
-    }
-
     private fun StringBuilder.renderMemorySection(
         title: String,
         memories: List<MemoryV2ReplyContextMemory>,
@@ -643,18 +562,6 @@ object MemoryV2ReplyContextPolicy {
             .thenByDescending { it.updatedAt }
             .thenBy { it.memoryId }
 
-    private val NEGATIVE_PREFERENCE = Regex("不喜欢|不再喜欢|不爱了|不爱|讨厌|不想要")
-    private val POSITIVE_PREFERENCE = Regex("喜欢|偏爱|爱吃|爱喝|想要")
-    private val PREFERENCE_GENERIC_TERMS = setOf(
-        "喜欢",
-        "不喜",
-        "讨厌",
-        "偏爱",
-        "想要",
-        "现在",
-        "其实",
-        "一直",
-    )
 }
 
 class MemoryV2ReplyContextSnapshotBuilder(
@@ -749,7 +656,6 @@ class MemoryV2ReplyContextSnapshotBuilder(
             budgetOmittedMessageCount = selection.omittedMessageCount,
             providerId = providerId,
             providerWindowTokens = providerWindowTokens,
-            conflictClarification = layers.preflightConflict?.clarification,
         )
     }
 

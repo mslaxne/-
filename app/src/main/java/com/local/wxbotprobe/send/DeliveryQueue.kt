@@ -197,6 +197,25 @@ class DeliveryStore(
         return File(directory, "$id.json").delete()
     }
 
+    fun retarget(
+        id: String,
+        chatFingerprint: Long,
+        conversationKey: String,
+        nowMillis: Long = System.currentTimeMillis(),
+    ): Delivery? {
+        val current = find(id) ?: return null
+        if (!current.waiting) {
+            return current
+        }
+        val updated = current.copy(
+            chatFingerprint = chatFingerprint,
+            conversationKey = conversationKey.ifBlank { current.conversationKey },
+            updatedAt = nowMillis,
+        )
+        save(updated)
+        return updated
+    }
+
     fun beginSend(id: String, nowMillis: Long = System.currentTimeMillis()): Delivery? {
         val current = find(id) ?: return null
         if (!current.waiting) {

@@ -2,7 +2,6 @@ package com.local.wxbotprobe.memory.v2
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
-import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -20,7 +19,7 @@ class MemoryV2ReplyContextSnapshotTest {
     fun `mandatory facts and layered event windows are assembled`() {
         val layers = assemble(
             memories = listOf(
-                memory("a0", "A0", "对方是你的同事。", NOW - DAY),
+                memory("a0", "A0", "对方是你的妻子。", NOW - DAY),
                 memory("a1", "A1", "对方喜欢草莓冰淇淋。", NOW - DAY * 30),
                 memory("recent", "A2", "对方说明天要去医院。", NOW - DAY),
                 memory("expanded", "A2", "对方提到周末去公园。", NOW - DAY * 5),
@@ -63,7 +62,7 @@ class MemoryV2ReplyContextSnapshotTest {
                 memory(
                     "recent-b",
                     "A2",
-                    "对方再次询问你是否在线。",
+                    "对方再次问你在不在，并叫你老公。",
                     NOW - DAY - 60,
                 ),
                 memory(
@@ -92,7 +91,7 @@ class MemoryV2ReplyContextSnapshotTest {
     fun `render keeps stable semantic order and does not expose memory ids`() {
         val layers = assemble(
             memories = listOf(
-                memory("hidden-a0", "A0", "对方是你的同事。", NOW - DAY),
+                memory("hidden-a0", "A0", "对方是你的妻子。", NOW - DAY),
                 memory("hidden-a1", "A1", "对方喜欢草莓。", NOW - DAY),
                 memory("hidden-a2", "A2", "对方说明天早起。", NOW - DAY),
             ),
@@ -219,7 +218,7 @@ class MemoryV2ReplyContextSnapshotTest {
     }
 
     @Test
-    fun `opposite preference creates a deterministic clarification`() {
+    fun `opposite preference is left to model interpretation`() {
         val layers = assemble(
             memories = listOf(
                 memory(
@@ -230,34 +229,13 @@ class MemoryV2ReplyContextSnapshotTest {
                     predicate = "preference.food",
                 ),
             ),
-            query = "我不喜欢草莓冰淇淋，喜欢咖啡",
+            query = "我不喜欢草莓冰淇淋，喜欢巧克力冰淇淋",
         )
         val text = MemoryV2ReplyContextPolicy.render(layers, options)
 
-        assertEquals("A1", layers.preflightConflict?.tier)
-        assertTrue(
-            layers.preflightConflict?.clarification.orEmpty()
-                .contains("是我记错了吗？"),
-        )
-        assertTrue("[本轮记忆冲突预检]" in text)
-    }
-
-    @Test
-    fun `explicit changed preference does not create a clarification preflight`() {
-        val layers = assemble(
-            memories = listOf(
-                memory(
-                    "icecream",
-                    "A1",
-                    "对方喜欢吃草莓冰淇淋。",
-                    NOW - DAY,
-                    predicate = "preference.food",
-                ),
-            ),
-            query = "草莓我早就吃腻了，现在更偏爱咖啡。",
-        )
-
-        assertNull(layers.preflightConflict)
+        assertTrue("[A1 长期事实]" in text)
+        assertFalse("[本轮记忆冲突预检]" in text)
+        assertFalse("建议回复：" in text)
     }
 
     private fun assemble(

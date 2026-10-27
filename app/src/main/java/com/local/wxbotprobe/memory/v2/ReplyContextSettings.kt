@@ -41,7 +41,6 @@ data class ReplyContextPayload(
     val providerId: String = "",
     val providerWindowTokens: Int = 0,
     val budgetOmittedMessageCount: Int = 0,
-    val conflictClarification: String? = null,
 ) {
     val includesConversation: Boolean
         get() = conversationMessages.isNotEmpty()
@@ -112,7 +111,6 @@ class MemoryV2ReplyContextPayloadBuilder(
         var layeredMessages = emptyList<MemoryV2ReplyContextMessage>()
         var layeredHash: String? = null
         var layeredBudgetOmitted = 0
-        var layeredConflictClarification: String? = null
         val result = ReplyContextFallbackPolicy.build(
             primary = {
                 val budget = currentBudget()
@@ -126,7 +124,6 @@ class MemoryV2ReplyContextPayloadBuilder(
                 layeredMessages = snapshot.layers.sessionMessages
                 layeredHash = snapshot.snapshotSha256
                 layeredBudgetOmitted = snapshot.budgetOmittedMessageCount
-                layeredConflictClarification = snapshot.conflictClarification
                 layeredText = MemoryV2ReplyContextPolicy.render(
                     layers = snapshot.layers,
                     options = MemoryV2ReplyContextOptions(
@@ -172,13 +169,6 @@ class MemoryV2ReplyContextPayloadBuilder(
                 layeredBudgetOmitted
             } else {
                 0
-            },
-            conflictClarification = if (
-                result.source == ReplyContextMode.LAYERED
-            ) {
-                layeredConflictClarification
-            } else {
-                null
             },
         )
     }

@@ -12,6 +12,15 @@
   actions.
 - Waits three seconds after launch so the user can return to WeChat.
 - First successful frame becomes the baseline; history is not treated as new.
+- After an explicit start or resume, the first stable baseline is evaluated as a
+  startup conversation. Visible `IN`/`OUT` bubbles are merged with persisted
+  current-session history, with the visible tail authoritative and overlap
+  deduplicated.
+- Startup evaluation triggers only when the bottom visible message is a readable
+  incoming message. Outgoing or unknown-role bottom messages do not trigger a
+  proactive reply.
+- Resume resets the polling baseline before startup evaluation so messages
+  received while paused cannot also become a later duplicate burst reply.
 - Polls every three seconds through the selected `DeviceTransport` screenshot,
   RapidOCR and pixel rules.
 - Runs OCR on every captured frame. Frame fingerprints remain diagnostic input,

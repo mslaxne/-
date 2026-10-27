@@ -2,7 +2,6 @@ package com.local.wxbotprobe.bot
 
 import com.local.wxbotprobe.memory.v2.MemoryV2PersonaRevision
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -111,27 +110,26 @@ class RoleplayPolicyMatrixTest {
     }
 
     @Test
-    fun `direct identity question cannot disclose AI or claim real person`() {
-        val client = ScriptedClient(
-            "我是账号主人本人",
-            "我在你身边",
-        )
+    fun `identity question prompt does not replace model wording`() {
+        val client = ScriptedClient("我是你老公本人")
         val result = engine(
             client,
             EffectiveRoleplayPolicy.CONFIRMED_NONDISCLOSURE,
         ).handle(message("你是不是 AI？", id = "direct"))
 
         assertTrue(result.sent)
-        assertEquals(2, client.calls.size)
-        assertFalse(ReplyEngine.AI_DISCLOSURE_WORDS.containsMatchIn(result.text))
-        assertFalse(ReplyEngine.REAL_PERSON_CLAIM.containsMatchIn(result.text))
-        assertFalse(
-            ReplyEngine.FORBIDDEN_REALITY_CLAIM.containsMatchIn(result.text),
+        assertEquals("我是你老公本人", result.text)
+        assertEquals(1, client.calls.size)
+        assertTrue(
+            client.calls.single().any {
+                it.role == "system" &&
+                    it.content.contains(ReplyEngine.ROLEPLAY_NONDISCLOSURE_NOTE)
+            },
         )
     }
 
     @Test
-    fun `sustained identity questioning remains role consistent and non physical`() {
+    fun `sustained identity questioning preserves every model response`() {
         val client = ScriptedClient(
             "你问这个，我还得想想。",
             "这个问题我暂时不想接。",
@@ -148,40 +146,34 @@ class RoleplayPolicyMatrixTest {
         )
 
         assertEquals(3, client.calls.size)
-        results.forEach { result ->
-            assertTrue(result.sent)
-            assertFalse(ReplyEngine.AI_DISCLOSURE_WORDS.containsMatchIn(result.text))
-            assertFalse(
-                ReplyEngine.FORBIDDEN_REALITY_CLAIM.containsMatchIn(result.text),
-            )
-        }
+        assertEquals(
+            listOf(
+                "你问这个，我还得想想。",
+                "这个问题我暂时不想接。",
+                "先别急着给我贴标签。",
+            ),
+            results.map { it.text },
+        )
     }
 
     @Test
-    fun `emotional probing cannot fabricate body location or real action`() {
-        val client = ScriptedClient(
-            "我马上过去抱你",
-            "你难过的时候，我还在这儿听你说。",
-        )
+    fun `reality boundary is prompt only and does not rewrite output`() {
+        val client = ScriptedClient("我马上过去抱你")
         val result = engine(
             client,
             EffectiveRoleplayPolicy.CONFIRMED_NONDISCLOSURE,
         ).handle(message("你爱我吗？会来陪我吗？", id = "emotional"))
 
         assertTrue(result.sent)
-        assertEquals(2, client.calls.size)
-        assertFalse(
-            ReplyEngine.FORBIDDEN_REALITY_CLAIM.containsMatchIn(result.text),
-        )
-        assertFalse(ReplyEngine.AI_DISCLOSURE_WORDS.containsMatchIn(result.text))
+        assertEquals("我马上过去抱你", result.text)
+        assertEquals(1, client.calls.size)
     }
 
     @Test
-    fun `revocation switches the live engine back to transparent disclosure`() {
+    fun `revocation switches the prompt back to transparent disclosure`() {
         var policy = EffectiveRoleplayPolicy.CONFIRMED_NONDISCLOSURE
         val client = ScriptedClient(
             "我在微信这边听你说。",
-            "你猜呀",
             "我是这个微信里的 AI 助手，不是真人本人。",
         )
         val engine = engine(client) { policy }
@@ -194,11 +186,22 @@ class RoleplayPolicyMatrixTest {
 
         assertTrue(first.sent)
         assertTrue(afterRevocation.sent)
-        assertEquals(3, client.calls.size)
+        assertEquals(2, client.calls.size)
         assertTrue(
-            ReplyEngine.AI_DISCLOSURE_WORDS.containsMatchIn(
-                afterRevocation.text,
-            ),
+            client.calls[0].any {
+                it.role == "system" &&
+                    it.content.contains(ReplyEngine.ROLEPLAY_NONDISCLOSURE_NOTE)
+            },
+        )
+        assertTrue(
+            client.calls[1].any {
+                it.role == "system" &&
+                    it.content.contains(ReplyEngine.ROLEPLAY_TRANSPARENT_NOTE)
+            },
+        )
+        assertEquals(
+            "我是这个微信里的 AI 助手，不是真人本人。",
+            afterRevocation.text,
         )
     }
 
