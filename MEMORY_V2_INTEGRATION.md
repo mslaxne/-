@@ -19,7 +19,7 @@ Memory 2.0 is the **only production memory path**. Production no longer
 constructs `ChatMemoryStore` or `AgentMemoryManager`; legacy classes remain
 isolated historical tooling and are not referenced by the app UI or coordinator.
 
-Current public candidate: `1.0.131` (versionCode `155`). Route C and Route B
+Current public candidate: `1.1.2` (versionCode `162`). Route C and Route B
 share the same Memory V2 implementation described here.
 
 Implemented Android foundation:

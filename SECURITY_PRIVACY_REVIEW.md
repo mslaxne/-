@@ -2,7 +2,7 @@
 
 Last reviewed: 2026-10-28.
 
-Current public candidate: `1.0.131` (155).
+Current public candidate: `1.1.2` (162).
 
 This is a focused static and release-artifact review, not a security
 certification. It covers backups, debug exports, API-key storage, chat-title
