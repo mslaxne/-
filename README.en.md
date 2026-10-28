@@ -18,7 +18,7 @@ chat that is currently open.
 
 ## Test APK
 
-- [Download the 1.0.130 Route C test build](https://github.com/mslaxne/handora-android-public/releases/tag/v1.0.130-test.1)
+- [Download the 1.0.130 Route C test build](https://github.com/mslaxne/-/releases/tag/v1.0.130-test.1)
 - The APK is signed with an Android development/debug certificate. It is a
   feedback build, not a stable production release.
 - Include the device model, Android version, WeChat version, app version, and
