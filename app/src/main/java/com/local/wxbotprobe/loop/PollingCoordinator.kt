@@ -439,13 +439,26 @@ class PollingCoordinator(
         resetForNewBaseline()
     }
 
-    fun cachedSnapshot(): ScreenSnapshot? = lastSnapshot
+    fun copyCurrentScreenshot(destination: File): Boolean {
+        if (lastSnapshot == null) {
+            return false
+        }
+        val source = File(
+            context.getExternalFilesDir(null) ?: context.filesDir,
+            "monitor/latest.png",
+        )
+        if (!source.isFile || source.length() == 0L) {
+            return false
+        }
+        val parent = destination.parentFile ?: return false
+        if (!parent.exists() && !parent.mkdirs()) {
+            return false
+        }
+        source.copyTo(destination, overwrite = true)
+        return destination.isFile && destination.length() > 0L
+    }
 
     fun nextBurstDueAt(): Long? = state.burstDueAtMillis
-
-    fun drainDueBurst(nowMillis: Long): CompletedBurst? {
-        return state.drainBurstIfReady(nowMillis)
-    }
 
     companion object {
         private const val BURST_WAIT_MS = 4_000L

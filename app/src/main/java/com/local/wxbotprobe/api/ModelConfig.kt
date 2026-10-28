@@ -78,6 +78,7 @@ data class ModelConfiguration(
     val provider: ModelProvider,
     val baseUrl: String,
     val model: String,
+    val supportsVision: Boolean = false,
 ) {
     fun configured(hasKey: Boolean): Boolean {
         if (provider == ModelProvider.DISABLED) {
@@ -100,6 +101,24 @@ data class ModelConfiguration(
             else -> provider.isFreeTier
         }
     }
+
+    fun visionScopeKey(): String {
+        return ModelVisionScope.key(provider, baseUrl, model)
+    }
+}
+
+object ModelVisionScope {
+    fun key(
+        provider: ModelProvider,
+        baseUrl: String,
+        model: String,
+    ): String {
+        return listOf(
+            provider.storageId,
+            baseUrl.trim().trimEnd('/'),
+            model.trim(),
+        ).joinToString("|")
+    }
 }
 
 object ModelSettings {
@@ -108,12 +127,17 @@ object ModelSettings {
         val provider = ModelProvider.fromStorageId(
             preferences.getString(KEY_PROVIDER, null),
         )
+        val baseUrl = preferences.getString(KEY_BASE_URL, null)
+            ?: provider.presetBaseUrl
+        val model = preferences.getString(KEY_MODEL, null)
+            ?: provider.presetModel
+        val visionKey = ModelVisionScope.key(provider, baseUrl, model)
         return ModelConfiguration(
             provider = provider,
-            baseUrl = preferences.getString(KEY_BASE_URL, null)
-                ?: provider.presetBaseUrl,
-            model = preferences.getString(KEY_MODEL, null)
-                ?: provider.presetModel,
+            baseUrl = baseUrl,
+            model = model,
+            supportsVision = preferences.getBoolean(KEY_VISION_ENABLED, false) &&
+                preferences.getString(KEY_VISION_SCOPE, "") == visionKey,
         )
     }
 
@@ -126,6 +150,15 @@ object ModelSettings {
             .putString(KEY_PROVIDER, provider.storageId)
             .putString(KEY_BASE_URL, provider.presetBaseUrl)
             .putString(KEY_MODEL, provider.presetModel)
+            .putBoolean(KEY_VISION_ENABLED, false)
+            .putString(
+                KEY_VISION_SCOPE,
+                ModelVisionScope.key(
+                    provider,
+                    provider.presetBaseUrl,
+                    provider.presetModel,
+                ),
+            )
             .apply()
     }
 
@@ -134,10 +167,32 @@ object ModelSettings {
         baseUrl: String,
         model: String,
     ) {
+        val previous = load(context)
+        val nextKey = ModelVisionScope.key(
+            previous.provider,
+            baseUrl,
+            model,
+        )
+        val preserveVision = previous.supportsVision &&
+            previous.visionScopeKey() == nextKey
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
             .edit()
             .putString(KEY_BASE_URL, baseUrl.trim())
             .putString(KEY_MODEL, model.trim())
+            .putBoolean(KEY_VISION_ENABLED, preserveVision)
+            .putString(KEY_VISION_SCOPE, nextKey)
+            .apply()
+    }
+
+    fun setVisionInputEnabled(
+        context: Context,
+        enabled: Boolean,
+    ) {
+        val configuration = load(context)
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .edit()
+            .putBoolean(KEY_VISION_ENABLED, enabled)
+            .putString(KEY_VISION_SCOPE, configuration.visionScopeKey())
             .apply()
     }
 
@@ -152,4 +207,6 @@ object ModelSettings {
     private const val KEY_PROVIDER = "provider"
     private const val KEY_BASE_URL = "base_url"
     private const val KEY_MODEL = "model"
+    private const val KEY_VISION_ENABLED = "vision_enabled"
+    private const val KEY_VISION_SCOPE = "vision_scope"
 }

@@ -218,8 +218,6 @@ class RoleplayPolicyMatrixTest {
             ReplyConfig(
                 systemPrompt = "沉浸角色语气",
                 personaMessages = emptyList(),
-                minReplyInterval = 0.0,
-                maxReplyChars = 500,
                 identityQuestionPolicy =
                     PersonaIdentityQuestionPolicy.STAY_IN_CHARACTER,
                 roleplayPolicyProvider = policy,

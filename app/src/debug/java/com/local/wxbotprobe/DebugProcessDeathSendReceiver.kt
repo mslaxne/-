@@ -75,8 +75,7 @@ class DebugProcessDeathSendReceiver : BroadcastReceiver() {
         val deviceActions = DeviceActionGate()
         val snapshot = captureFileTransferAssistant(context, transport, deviceActions)
         val fingerprint = snapshot.chat.fingerprint
-        val policyTitle = WhitelistContacts.current(context).firstOrNull()
-            ?: error("the current send whitelist is empty")
+        val policyTitle = snapshot.chat.title
 
         val now = System.currentTimeMillis()
         val source = File(context.filesDir, SOURCE_PATH)
@@ -125,6 +124,7 @@ class DebugProcessDeathSendReceiver : BroadcastReceiver() {
                 deviceActions = deviceActions,
                 outgoingConfirmation = OutgoingConfirmationTracker(),
                 canAutoSend = { true },
+                isSendAuthorized = { _, _ -> true },
                 onDeliveredReply = { _, _, _ -> },
                 onStatus = {},
                 onNotification = {},
@@ -181,8 +181,6 @@ class DebugProcessDeathSendReceiver : BroadcastReceiver() {
         check(snapshot.chat.fingerprint == delivery.chatFingerprint) {
             "the foreground chat does not match the queued delivery"
         }
-        val policyTitle = WhitelistContacts.current(context).firstOrNull()
-            ?: error("the current send whitelist is empty")
         val memory = MemoryCoordinator(
             context = context,
             onLog = { android.util.Log.i("DebugProcessDeathSend", it) },
@@ -196,6 +194,7 @@ class DebugProcessDeathSendReceiver : BroadcastReceiver() {
                 deviceActions = deviceActions,
                 outgoingConfirmation = OutgoingConfirmationTracker(),
                 canAutoSend = { true },
+                isSendAuthorized = { _, _ -> true },
                 onDeliveredReply = { _, _, _ -> },
                 onStatus = {},
                 onNotification = {},
@@ -203,7 +202,7 @@ class DebugProcessDeathSendReceiver : BroadcastReceiver() {
                 onSendStateChanged = {},
             ).drain(
                 chatFingerprint = snapshot.chat.fingerprint,
-                chatTitle = policyTitle,
+                chatTitle = snapshot.chat.title,
                 inputFieldHint = snapshot.inputField,
             )
         } finally {
@@ -212,7 +211,7 @@ class DebugProcessDeathSendReceiver : BroadcastReceiver() {
         return writeStatus(context)
             .put("status", "resume_returned")
             .put("captured_title", snapshot.chat.title)
-            .put("policy_test_title", policyTitle)
+            .put("policy_test_title", snapshot.chat.title)
     }
 
     private fun captureFileTransferAssistant(

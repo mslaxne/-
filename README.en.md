@@ -1,4 +1,4 @@
-# Handora 1
+# 代理
 
 [简体中文](README.md) | English
 
@@ -18,7 +18,7 @@ chat that is currently open.
 
 ## Test APK
 
-- [Download the 1.0.130 Route C test build](https://github.com/mslaxne/-/releases/tag/v1.0.130-test.1)
+- [Download the 1.0.131 Route C test build](https://github.com/mslaxne/-/releases/tag/v1.0.131-test.1)
 - The APK is signed with an Android development/debug certificate. It is a
   feedback build, not a stable production release.
 - Include the device model, Android version, WeChat version, app version, and
@@ -29,7 +29,8 @@ chat that is currently open.
 
 - MediaProjection screen capture with a five-second delay.
 - Accessibility gesture click at `(538, 2320)`.
-- Custom InputMethodService commit of `这是测试`.
+- BotIme writes model replies through WeChat's active input connection and exposes
+  no clickable test-write button.
 - Shizuku UserService screenshot and input tap in the separate `routeB` build.
 - Route C screenshot, gesture tap, foreground package and global actions through
   the local AccessibilityService.
@@ -52,13 +53,29 @@ chat that is currently open.
 - Screenshot/OCR polling runs on its own worker while model generation and
   delivery run on a serialized action worker. Device screenshots and sends
   share a lock so send-time keyboard movement does not contaminate OCR.
-- Foreground polling, baseline suppression and three-second burst collection.
+- Foreground polling, baseline suppression and four-second quiet-window burst
+  collection with a 12-second maximum age.
+- Vision input is off by default and can only be enabled for the current
+  provider/endpoint/model scope; changing that scope invalidates the setting.
+- When vision is enabled, each completed burst sends one current full WeChat-window
+  screenshot to the model. Retries and process recovery reuse the same image
+  instead of capturing another one.
+- The screenshot can include the status bar, notifications, contact title,
+  visible history and images embedded in the chat. The app does not selectively
+  crop it and does not write it to Memory V2.
+- Normal model output is the reply text. Only an exact first control line of
+  `WAIT` or `SILENT` means wait or do not reply; legacy JSON action objects remain
+  compatible.
+- Replies are not hard-truncated at a fixed character count, suppressed for 30
+  seconds only because their text matches, or discarded by a programmatic
+  minimum reply interval. Send authorization, quiet hours and daily operating
+  caps still apply.
 - Persona-aware DeepSeek reply generation. Identity, roleplay and prompt-injection
   boundaries are prompt-only; model text is not replaced with keyword-triggered
   canned replies.
 - After an explicit Agent start or resume, the first stable screen is evaluated.
-  When the bottom message is incoming, persisted session history is merged and
-  deduplicated with the visible screen transcript before generation. An outgoing
+  When the bottom message is incoming, persisted session history is merged with
+  the ordered visible transcript and deduplicated before generation. An outgoing
   or unknown bottom message does not trigger a proactive reply.
 - Startup snapshots use a deterministic ID. Unsent, pending and partially sent
   replies are reused without another model call; unknown or failed deliveries
@@ -84,8 +101,9 @@ chat that is currently open.
   notification, transport, IME or API key blocks the dependent capability;
   unavailable battery-exemption controls or unscaled device layouts only warn.
 - Settings -> Model configuration supports DeepSeek, free-tier/custom
-  OpenAI-compatible providers and disabled generation. Free tiers use the
-  user's own provider key; no shared API key is bundled.
+  OpenAI-compatible providers, disabled generation and a default-off,
+  model-scoped vision switch. Free tiers use the user's own provider key; no
+  shared API key is bundled.
 - If BotIme is enabled but not selected, Route C opens the system input-method
   picker; only the disabled-IME case opens input-method management.
 - During an active send, chat-title pixels are no longer rechecked because WeChat
@@ -98,8 +116,17 @@ chat that is currently open.
 - Extraction receives all active A0/A1 memories, relevant A0/A2 memories, the
   previous A3 summary and recent source messages. A3 and recent sources are
   reference-only and cannot be cited as evidence.
+- The Memory Agent has only scoped read-only tools for memory search/list, recent
+  session messages and pending conflicts. It receives no raw SQL or arbitrary
+  scope ID and finishes through a validated `memory.commit_batch` intent or a
+  direct ExtractionBatch.
+- Each extraction job is budgeted for at most four model calls: three read tools
+  and one final submission. Summary jobs remain single-call and receive no
+  database tools.
 - New A0 facts and changes to existing A0 memory remain in a review queue until
   explicitly approved. Persona configuration remains protected from chat.
+- Reply context labels event time separately from memory update time and supplies
+  absolute dates plus current system time; the LLM interprets relative age.
 - Contact switching and stopping detach the active session immediately. A
   single background memory worker summarizes closing/pending sessions with
   persisted recovery and visible queue progress.
@@ -180,8 +207,8 @@ app/build/outputs/apk/routeB/release/app-routeB-release.apk
 1. Install and open the APK.
 2. Allow notifications.
 3. Tap the screenshot button and approve whole-screen capture.
-4. Enable `Handora 1` under Android accessibility settings.
-5. Enable `Handora 1 输入法` and set BotIme as the system default keyboard.
+4. Enable `代理` under Android accessibility settings.
+5. Enable `代理输入法` and set BotIme as the system default keyboard.
 6. Keep WeChat in the foreground for delayed capture and click tests.
 7. Add the app to the system battery-optimization allowlist, and also allow
    auto-start/background activity in vivo's iManager if available.

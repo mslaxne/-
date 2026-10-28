@@ -1,6 +1,7 @@
 package com.local.wxbotprobe.api
 
 import com.local.wxbotprobe.bot.ChatClient
+import com.local.wxbotprobe.bot.ChatImage
 import com.local.wxbotprobe.bot.ChatMessage
 import com.local.wxbotprobe.bot.Completion
 import org.junit.Assert.assertEquals
@@ -70,6 +71,29 @@ class ApiBudgetPolicyTest {
         val low = ApiBudgetPolicy.worstCaseUsd(messages, 100, "deepseek-flash")
         val high = ApiBudgetPolicy.worstCaseUsd(messages, 1_000, "deepseek-flash")
         assertTrue(high > low)
+    }
+
+    @Test
+    fun `prompt estimate includes image tokens`() {
+        val textOnly = listOf(ChatMessage("user", "[[图片]]"))
+        val withImage = listOf(
+            ChatMessage(
+                role = "user",
+                content = "[[图片]]",
+                images = listOf(
+                    ChatImage(
+                        bytes = byteArrayOf(1, 2, 3),
+                        width = 1024,
+                        height = 1024,
+                    ),
+                ),
+            ),
+        )
+
+        assertTrue(
+            ApiBudgetPolicy.estimatePromptTokens(withImage) >
+                ApiBudgetPolicy.estimatePromptTokens(textOnly),
+        )
     }
 
     @Test

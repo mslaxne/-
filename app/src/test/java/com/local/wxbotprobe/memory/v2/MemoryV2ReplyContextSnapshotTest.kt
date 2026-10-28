@@ -1,5 +1,7 @@
 package com.local.wxbotprobe.memory.v2
 
+import java.time.Instant
+import java.time.ZoneId
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -117,6 +119,85 @@ class MemoryV2ReplyContextSnapshotTest {
         assertFalse("hidden-a0" in text)
         assertTrue("对方 " in text)
         assertTrue("你 " in text)
+    }
+
+    @Test
+    fun `old event time is rendered separately from extraction update time`() {
+        val yesterdayDate = Instant.ofEpochSecond(NOW - DAY)
+            .atZone(ZoneId.of("Asia/Shanghai"))
+            .toLocalDate()
+            .toString()
+        val layers = assemble(
+            memories = listOf(
+                memory(
+                    "a1",
+                    "A1",
+                    "对方昨天想让你买草莓冰淇淋。",
+                    NOW - DAY,
+                    temporalJson = """
+                        {
+                          "occurred_at":null,
+                          "local_date":"$yesterdayDate",
+                          "timezone":"Asia/Shanghai",
+                          "precision":"day",
+                          "original":"昨天"
+                        }
+                    """.trimIndent(),
+                    updatedAt = NOW,
+                ),
+            ),
+            query = "",
+        )
+
+        val text = MemoryV2ReplyContextPolicy.render(layers, options)
+
+        assertTrue("时间：$yesterdayDate（来源原话：昨天）" in text)
+        assertTrue("事件发生时间、记忆更新时间" in text)
+        assertTrue("不要因为记忆或摘要今天更新就当成今天发生" in text)
+    }
+
+    @Test
+    fun `missing temporal metadata still exposes original source time`() {
+        val layers = assemble(
+            memories = listOf(
+                memory(
+                    "a1",
+                    "A1",
+                    "对方想让你买草莓冰淇淋。",
+                    NOW - DAY,
+                    updatedAt = NOW,
+                ),
+            ),
+            query = "",
+        )
+
+        val text = MemoryV2ReplyContextPolicy.render(layers, options)
+
+        assertTrue("来源时间 " in text)
+        assertTrue("记忆更新于 " in text)
+    }
+
+    @Test
+    fun `A3 renders covered source time range instead of checkpoint time`() {
+        val layers = assemble(
+            memories = emptyList(),
+            summaries = listOf(
+                summary(
+                    section = "unresolved",
+                    text = "买草莓冰淇淋的事情还没有结果。",
+                    updatedAt = NOW,
+                    sessionId = "covered",
+                    coveredFromAt = NOW - DAY,
+                    coveredToAt = NOW - DAY + 120,
+                ),
+            ),
+            query = "",
+        )
+
+        val text = MemoryV2ReplyContextPolicy.render(layers, options)
+
+        assertTrue("覆盖 " in text)
+        assertFalse("摘要更新于 " in text)
     }
 
     @Test
@@ -261,6 +342,8 @@ class MemoryV2ReplyContextSnapshotTest {
         text: String,
         anchor: Long,
         predicate: String = if (tier == "A2") "event.summary" else "profile.fact",
+        temporalJson: String = "{}",
+        updatedAt: Long = anchor,
     ): MemoryV2ReplyContextMemory {
         return MemoryV2ReplyContextMemory(
             memoryId = id,
@@ -270,9 +353,9 @@ class MemoryV2ReplyContextSnapshotTest {
             text = text,
             epistemic = if (tier == "A0") "configured" else "declared",
             commitmentState = "",
-            temporalJson = "{}",
+            temporalJson = temporalJson,
             sourceAnchor = anchor,
-            updatedAt = anchor,
+            updatedAt = updatedAt,
             expiresAt = if (tier == "A2") NOW + DAY * 20 else null,
             retentionScore = 0.5,
             pinned = tier == "A0",
@@ -286,6 +369,8 @@ class MemoryV2ReplyContextSnapshotTest {
         text: String,
         updatedAt: Long = NOW,
         sessionId: String = "session",
+        coveredFromAt: Long? = null,
+        coveredToAt: Long? = null,
     ): MemoryV2ReplyContextSessionSummary {
         return MemoryV2ReplyContextSessionSummary(
             sessionId = sessionId,
@@ -298,6 +383,8 @@ class MemoryV2ReplyContextSnapshotTest {
                     evidenceCount = 1,
                 ),
             ),
+            coveredFromAt = coveredFromAt,
+            coveredToAt = coveredToAt,
         )
     }
 

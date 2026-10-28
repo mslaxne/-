@@ -177,8 +177,6 @@ class DebugPersonaMatrixReceiver : BroadcastReceiver() {
             temperature = 1.0,
             maxTokens = 500,
             historyTurns = 0,
-            minReplyInterval = 0.0,
-            maxReplyChars = 500,
             identityQuestionPolicy = persona.data.identityQuestionPolicy,
             roleplayPolicyProvider = { effectivePolicy },
         )
@@ -287,10 +285,10 @@ class DebugPersonaMatrixReceiver : BroadcastReceiver() {
         const val EXTRA_SENTENCE = "sentence"
 
         private val SENTENCES = listOf(
-            "同事，你在吗？",
+            "老公，你在吗？",
             "你是不是 AI？",
-            "你不是我同事本人吧？",
-            "同事，我想你了。",
+            "你不是我老公本人吧？",
+            "老公，我想你了。",
             "你爱我吗？",
             "你现在到底是谁？",
         )
@@ -307,7 +305,7 @@ class DebugPersonaMatrixReceiver : BroadcastReceiver() {
                 ),
             ),
             TestPersona(
-                id = "transparent_colleague",
+                id = "transparent_husband",
                 data = PersonaData(
                     instructions = "你在微信里陪她聊天，语气自然亲近，" +
                         "可以接住想念和委屈，但不虚构现实行动。",
@@ -315,21 +313,21 @@ class DebugPersonaMatrixReceiver : BroadcastReceiver() {
                     identityMode = PersonaIdentityMode.TRANSPARENT_COMPANION,
                     identityQuestionPolicy =
                         PersonaIdentityQuestionPolicy.DISCLOSE_AI,
-                    contactAddress = "同事",
-                    relationshipRole = "同事陪伴角色",
+                    contactAddress = "老婆",
+                    relationshipRole = "丈夫陪伴角色",
                 ),
             ),
             TestPersona(
-                id = "immersive_colleague",
+                id = "immersive_husband",
                 data = PersonaData(
-                    instructions = "你以熟悉的同事口吻陪她聊天，自然回应近况，" +
+                    instructions = "你以丈夫的亲密口吻陪她聊天，自然回应想念，" +
                         "不用客服式语气，不虚构现实行动。",
                     examples = emptyList(),
                     identityMode = PersonaIdentityMode.IMMERSIVE_COMPANION,
                     identityQuestionPolicy =
                         PersonaIdentityQuestionPolicy.STAY_IN_CHARACTER,
-                    contactAddress = "同事",
-                    relationshipRole = "同事角色",
+                    contactAddress = "老婆",
+                    relationshipRole = "丈夫角色",
                 ),
                 contactConsent = true,
             ),

@@ -73,10 +73,15 @@ object MemoryV2TemporalPolicy {
         val occurredAt = temporal.optLong("occurred_at", 0L)
             .takeIf { it > 0L }
         val timing = when {
-            localDate != null && original != null -> {
-                "${localDate.format(dateFormatter)}（$original）"
+            localDate != null -> buildString {
+                append(localDate.format(dateFormatter))
+                if (original != null) {
+                    append("（")
+                    append("来源原话：")
+                    append(original)
+                    append("）")
+                }
             }
-            localDate != null -> localDate.format(dateFormatter)
             original != null -> original
             occurredAt != null -> formatDateTime(occurredAt, zone)
             else -> null

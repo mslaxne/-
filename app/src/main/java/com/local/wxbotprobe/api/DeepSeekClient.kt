@@ -1,8 +1,10 @@
 package com.local.wxbotprobe.api
 
 import com.local.wxbotprobe.bot.ChatClient
+import com.local.wxbotprobe.bot.ChatImagePolicy
 import com.local.wxbotprobe.bot.ChatMessage
 import com.local.wxbotprobe.bot.Completion
+import com.local.wxbotprobe.chat.IMAGE_PLACEHOLDER
 import java.io.IOException
 import java.net.HttpURLConnection
 import java.net.URL
@@ -23,6 +25,7 @@ class DeepSeekClient(
     private val maxRetries: Int = 3,
     private val includeThinkingFlag: Boolean = true,
     private val providerLabel: String = "DeepSeek",
+    private val imageInputEnabled: Boolean = false,
 ) : ChatClient {
     override fun chat(
         messages: List<ChatMessage>,
@@ -92,16 +95,48 @@ class DeepSeekClient(
         temperature: Double,
         maxTokens: Int,
     ): String {
+        val requestMessages = ChatImagePolicy.capForRequest(messages)
         val payload = JSONObject()
             .put("model", model)
             .put(
                 "messages",
                 org.json.JSONArray().apply {
-                    messages.forEach {
+                    requestMessages.forEach {
+                        val images = if (imageInputEnabled && it.role == "user") {
+                            it.images
+                        } else {
+                            emptyList()
+                        }
+                        val content = if (images.isEmpty()) {
+                            it.content.ifBlank {
+                                if (it.images.isNotEmpty()) IMAGE_PLACEHOLDER else ""
+                            }
+                        } else {
+                            org.json.JSONArray().apply {
+                                put(
+                                    JSONObject()
+                                        .put("type", "text")
+                                        .put(
+                                            "text",
+                                            it.content.ifBlank { IMAGE_PLACEHOLDER },
+                                        ),
+                                )
+                                images.forEach { image ->
+                                    put(
+                                        JSONObject()
+                                            .put("type", "image_url")
+                                            .put(
+                                                "image_url",
+                                                JSONObject().put("url", image.dataUrl()),
+                                            ),
+                                    )
+                                }
+                            }
+                        }
                         put(
                             JSONObject()
                                 .put("role", it.role)
-                                .put("content", it.content),
+                                .put("content", content),
                         )
                     }
                 },

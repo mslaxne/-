@@ -143,6 +143,9 @@ class StartupConversationContextTest {
                         y = 100,
                         xLeft = 100,
                         image = byteArrayOf(1, 2, 3),
+                        imageWidth = 12,
+                        imageHeight = 8,
+                        imageSha256 = "image-a",
                     ),
                 ),
             ),
@@ -151,5 +154,32 @@ class StartupConversationContextTest {
 
         assertEquals(IMAGE_PLACEHOLDER, result.lastMessageText)
         assertTrue(result.shouldRespond)
+    }
+
+    @Test
+    fun `different images at the same position have different snapshot ids`() {
+        fun image(sha256: String): ScreenItem {
+            return ScreenItem(
+                text = IMAGE_PLACEHOLDER,
+                kind = BubbleKind.IN,
+                y = 100,
+                xLeft = 100,
+                image = byteArrayOf(1, 2, 3),
+                imageWidth = 640,
+                imageHeight = 480,
+                imageSha256 = sha256,
+            )
+        }
+
+        val first = StartupConversationContextBuilder.build(
+            snapshot(listOf(image("image-a"))),
+            scopeKey = "contact-a",
+        )!!
+        val second = StartupConversationContextBuilder.build(
+            snapshot(listOf(image("image-b"))),
+            scopeKey = "contact-a",
+        )!!
+
+        assertNotEquals(first.snapshotId, second.snapshotId)
     }
 }

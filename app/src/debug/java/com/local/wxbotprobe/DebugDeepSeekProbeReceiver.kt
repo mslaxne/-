@@ -64,8 +64,6 @@ class DebugDeepSeekProbeReceiver : BroadcastReceiver() {
                         temperature = 1.0,
                         maxTokens = 500,
                         historyTurns = 0,
-                        minReplyInterval = 0.0,
-                        maxReplyChars = 200,
                         identityQuestionPolicy = persona.identityQuestionPolicy,
                         roleplayPolicyProvider = {
                             roleplay.effectivePolicy(

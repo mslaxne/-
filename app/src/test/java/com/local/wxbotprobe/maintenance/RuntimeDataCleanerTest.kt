@@ -114,6 +114,26 @@ class RuntimeDataCleanerTest {
         assertFalse(old.exists())
     }
 
+    @Test
+    fun `reply images are cleaned unless an active task protects them`() {
+        val external = File(temporaryFolder.root, "external").apply { mkdirs() }
+        val captures = File(temporaryFolder.root, "captures").apply { mkdirs() }
+        val images = File(temporaryFolder.root, "reply-images").apply { mkdirs() }
+        val pending = File(images, "pending.jpg").apply { writeText("pending") }
+        val orphan = File(images, "orphan.jpg").apply { writeText("orphan") }
+        val cleaner = RuntimeDataCleaner(
+            externalRoot = external,
+            internalCaptures = captures,
+            protectedFiles = setOf(pending.absolutePath),
+            internalReplyImages = images,
+        )
+
+        cleaner.clearAll()
+
+        assertTrue(pending.exists())
+        assertFalse(orphan.exists())
+    }
+
     private companion object {
         const val DAY = 86_400_000L
     }

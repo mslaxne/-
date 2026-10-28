@@ -167,4 +167,52 @@ class ReplyRetryQueueTest {
         assertEquals("", retried.lastError)
         assertEquals(task.id, retryStore.nextReady(42L, 2_000L)?.id)
     }
+
+    @Test
+    fun `image attachments survive retry store recreation`() {
+        val retryStore = store()
+        val attachment = File(temporaryFolder.root, "reply-images/image-a.jpg")
+            .absolutePath
+        val task = retryStore.enqueue(
+            sourceFile = "/tmp/startup.json",
+            chatTitle = "联系人",
+            chatFingerprint = 42L,
+            conversationKey = "chat",
+            text = "[[图片]]",
+            isGroup = false,
+            nowMillis = 1_000L,
+            taskId = "startup-image",
+            attachments = listOf(attachment),
+        )
+
+        val loaded = store().find(task.id)
+
+        assertEquals(listOf(attachment), loaded?.attachments)
+    }
+
+    @Test
+    fun `legacy visual protocol failures become manual review without deletion`() {
+        val retryStore = store()
+        val legacy = retryStore.enqueue(
+            sourceFile = "/tmp/visual.json",
+            chatTitle = "联系人",
+            chatFingerprint = 42L,
+            conversationKey = "chat",
+            text = "[[图片]]",
+            isGroup = false,
+            nowMillis = 1_000L,
+        ).copy(
+            lastError = "visual decision was not a JSON object",
+            updatedAt = 2_000L,
+        )
+        retryStore.save(legacy)
+
+        assertEquals(1, retryStore.holdLegacyVisualProtocolFailures(3_000L))
+        val held = retryStore.find(legacy.id)
+
+        assertEquals(ReplyRetryStatus.FAILED, held?.status)
+        assertEquals(0L, held?.nextAttemptAt)
+        assertTrue(held?.lastError.orEmpty().contains("manual review"))
+        assertEquals(1, retryStore.all().size)
+    }
 }

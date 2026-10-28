@@ -30,6 +30,10 @@ data class ScreenItem(
     val y: Int,
     val xLeft: Int,
     val image: ByteArray? = null,
+    val imageWidth: Int = 0,
+    val imageHeight: Int = 0,
+    val imageSha256: String = "",
+    val imageMimeType: String = "image/jpeg",
 )
 
 data class FilteredRows(

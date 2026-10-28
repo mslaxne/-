@@ -3,6 +3,7 @@ package com.local.wxbotprobe.api
 import android.content.Context
 import com.local.wxbotprobe.bot.ChatClient
 import com.local.wxbotprobe.bot.ChatMessage
+import com.local.wxbotprobe.bot.ChatImagePolicy
 import com.local.wxbotprobe.bot.Completion
 import java.io.IOException
 import java.text.SimpleDateFormat
@@ -99,6 +100,7 @@ object ApiBudgetPolicy {
         return messages.sumOf { message ->
             message.role.toByteArray(Charsets.UTF_8).size +
                 message.content.toByteArray(Charsets.UTF_8).size +
+                message.images.sumOf(ChatImagePolicy::estimatedPromptTokens) +
                 MESSAGE_OVERHEAD_TOKENS
         }.coerceAtLeast(1)
     }
@@ -187,12 +189,13 @@ class MeteredChatClient(
         val date = SimpleDateFormat("yyyy-MM-dd", Locale.CHINA).format(Date(now))
         val spent = usageStore.spentToday(now)
         val limit = dailyLimitUsd()
-        val estimate = ApiBudgetPolicy.worstCaseUsd(messages, maxTokens, model)
+        val requestMessages = ChatImagePolicy.capForRequest(messages)
+        val estimate = ApiBudgetPolicy.worstCaseUsd(requestMessages, maxTokens, model)
         if (!ApiBudgetGate.reserve(date, spent, limit, estimate)) {
             throw ApiBudgetExceededException(spentUsd = spent, limitUsd = limit)
         }
         try {
-            val completion = delegate.chat(messages, temperature, maxTokens)
+            val completion = delegate.chat(requestMessages, temperature, maxTokens)
             usageStore.record(
                 promptTokens = completion.promptTokens,
                 completionTokens = completion.completionTokens,

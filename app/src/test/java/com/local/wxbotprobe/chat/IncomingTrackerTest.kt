@@ -11,6 +11,21 @@ class IncomingTrackerTest {
         y: Int = 0,
     ) = ScreenItem(text, kind, y = y, xLeft = 200)
 
+    private fun image(
+        sha256: String,
+        kind: BubbleKind = BubbleKind.IN,
+        y: Int = 1_000,
+    ) = ScreenItem(
+        text = IMAGE_PLACEHOLDER,
+        kind = kind,
+        y = y,
+        xLeft = 200,
+        image = sha256.toByteArray(),
+        imageWidth = 640,
+        imageHeight = 480,
+        imageSha256 = sha256,
+    )
+
     @Test
     fun `only the new message is collected`() {
         val tracker = IncomingTracker()
@@ -118,5 +133,60 @@ class IncomingTrackerTest {
             listOf(item("今天下午三点开会"), item("明天下午三点开会")),
         )
         assertEquals(listOf("明天下午三点开会"), fresh.map { it.text })
+    }
+
+    @Test
+    fun `different pure images are collected and hash duplicates are ignored`() {
+        val tracker = IncomingTracker()
+        tracker.prime(listOf(image("old-image")))
+
+        assertTrue(
+            tracker.collectFresh(listOf(image("old-image"))).isEmpty(),
+        )
+        val fresh = tracker.collectFresh(
+            listOf(image("old-image"), image("new-image", y = 1_200)),
+        )
+
+        assertEquals(
+            listOf("new-image"),
+            fresh.map { it.imageSha256 },
+        )
+    }
+
+    @Test
+    fun `outgoing image does not trigger a reply`() {
+        val tracker = IncomingTracker()
+
+        assertTrue(
+            tracker.collectFresh(
+                listOf(image("outgoing-image", kind = BubbleKind.OUT)),
+            ).isEmpty(),
+        )
+    }
+
+    @Test
+    fun `same image sent again at the bottom is fresh`() {
+        val tracker = IncomingTracker()
+        tracker.collectFresh(listOf(image("repeat-image", y = 1_600)))
+        tracker.collectFresh(emptyList())
+
+        val fresh = tracker.collectFresh(
+            listOf(image("repeat-image", y = 1_620)),
+        )
+
+        assertEquals(1, fresh.size)
+    }
+
+    @Test
+    fun `same image scrolling far upward is not fresh`() {
+        val tracker = IncomingTracker()
+        tracker.collectFresh(listOf(image("old-image", y = 1_800)))
+        tracker.collectFresh(emptyList())
+
+        assertTrue(
+            tracker.collectFresh(
+                listOf(image("old-image", y = 900)),
+            ).isEmpty(),
+        )
     }
 }

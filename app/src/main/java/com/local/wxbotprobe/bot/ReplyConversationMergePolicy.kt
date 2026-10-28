@@ -43,6 +43,13 @@ object ReplyConversationMergePolicy {
     }
 
     private fun key(message: ChatMessage): String {
-        return message.role + '\u0000' + TextRules.normalise(message.content)
+        val imageKey = message.images.joinToString(",") {
+            it.sha256.ifBlank { "${it.width}x${it.height}:${it.bytes.size}" }
+        }
+        return message.role +
+            '\u0000' +
+            TextRules.normalise(message.content) +
+            '\u0000' +
+            imageKey
     }
 }

@@ -4,7 +4,6 @@ class ConversationStore(
     val maxTurns: Int = 0,
 ) {
     private val histories = mutableMapOf<String, ArrayDeque<ChatMessage>>()
-    private val lastReplyAt = mutableMapOf<String, Double>()
     private val lastMessageAt = mutableMapOf<String, Double>()
 
     init {
@@ -35,12 +34,6 @@ class ConversationStore(
 
     fun popLast(conversationId: String): ChatMessage? {
         return histories[conversationId]?.removeLastOrNull()
-    }
-
-    fun lastReplyAt(conversationId: String): Double = lastReplyAt[conversationId] ?: 0.0
-
-    fun markReply(conversationId: String, timestamp: Double) {
-        lastReplyAt[conversationId] = timestamp
     }
 
     fun quietFor(conversationId: String, now: Double): Double {

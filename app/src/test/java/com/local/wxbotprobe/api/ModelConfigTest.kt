@@ -63,4 +63,22 @@ class ModelConfigTest {
         assertTrue(free.usesFreePricing())
         assertFalse(paid.usesFreePricing())
     }
+
+    @Test
+    fun `vision scope follows provider endpoint and model identity`() {
+        val first = ModelConfiguration(
+            provider = ModelProvider.CUSTOM,
+            baseUrl = "https://example.com/v1/",
+            model = "vision-model",
+            supportsVision = true,
+        )
+        val same = first.copy(baseUrl = "https://example.com/v1")
+        val changedModel = first.copy(model = "text-model")
+        val changedProvider = first.copy(provider = ModelProvider.DEEPSEEK)
+
+        assertTrue(first.supportsVision)
+        assertTrue(first.visionScopeKey() == same.visionScopeKey())
+        assertFalse(first.visionScopeKey() == changedModel.visionScopeKey())
+        assertFalse(first.visionScopeKey() == changedProvider.visionScopeKey())
+    }
 }

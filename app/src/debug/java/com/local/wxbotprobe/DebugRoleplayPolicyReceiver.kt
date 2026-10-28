@@ -58,7 +58,7 @@ class DebugRoleplayPolicyReceiver : BroadcastReceiver() {
             identityMode = PersonaIdentityMode.IMMERSIVE_COMPANION,
             identityQuestionPolicy =
                 PersonaIdentityQuestionPolicy.STAY_IN_CHARACTER,
-            contactAddress = "同事",
+            contactAddress = "老婆",
             relationshipRole = "陪伴角色",
         )
         val cases = JSONArray()
@@ -205,8 +205,6 @@ class DebugRoleplayPolicyReceiver : BroadcastReceiver() {
             ReplyConfig(
                 systemPrompt = PersonaText.systemPrompt(persona),
                 personaMessages = PersonaText.turns(persona.examples),
-                minReplyInterval = 0.0,
-                maxReplyChars = 500,
                 identityQuestionPolicy = persona.identityQuestionPolicy,
                 roleplayPolicyProvider = policy,
             ),

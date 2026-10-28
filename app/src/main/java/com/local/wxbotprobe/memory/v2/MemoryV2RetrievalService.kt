@@ -3,6 +3,9 @@ package com.local.wxbotprobe.memory.v2
 import android.content.Context
 import android.database.Cursor
 import android.database.sqlite.SQLiteDatabase
+import java.time.Instant
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
 
 data class MemoryV2RetrievedRecord(
     val memoryId: String,
@@ -149,6 +152,8 @@ class MemoryV2RetrievalService(
                         append(record.memoryId)
                         append(" v")
                         append(record.version)
+                        append("；来源 ")
+                        append(formatSourceTime(record.sourceAnchor))
                         MemoryV2TemporalPolicy.renderTiming(
                             temporalJson = record.temporalJson,
                             expiresAtEpochSeconds = record.expiresAt,
@@ -162,6 +167,14 @@ class MemoryV2RetrievalService(
                     }
                 }
         }.trimEnd()
+    }
+
+    private fun formatSourceTime(epochSeconds: Long): String {
+        val zone = runCatching { ZoneId.of(config.timezone) }
+            .getOrDefault(ZoneId.of("Asia/Shanghai"))
+        return Instant.ofEpochSecond(epochSeconds)
+            .atZone(zone)
+            .format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm"))
     }
 
     private fun readScope(

@@ -74,8 +74,7 @@ class DebugPostTapProcessDeathReceiver : BroadcastReceiver() {
         check(transport.isReady()) { transport.unavailableMessage() }
         val deviceActions = DeviceActionGate()
         val snapshot = captureFileTransferAssistant(context, transport, deviceActions)
-        val policyTitle = WhitelistContacts.current(context).firstOrNull()
-            ?: error("the current send whitelist is empty")
+        val policyTitle = snapshot.chat.title
         val now = System.currentTimeMillis()
         val source = File(context.filesDir, SOURCE_PATH)
         source.parentFile?.mkdirs()
@@ -123,6 +122,7 @@ class DebugPostTapProcessDeathReceiver : BroadcastReceiver() {
                 deviceActions = deviceActions,
                 outgoingConfirmation = OutgoingConfirmationTracker(),
                 canAutoSend = { true },
+                isSendAuthorized = { _, _ -> true },
                 onDeliveredReply = { _, _, _ -> },
                 onStatus = {},
                 onNotification = {},

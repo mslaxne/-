@@ -110,6 +110,22 @@ class MemoryV2TemporalPolicyTest {
         assertTrue(text.contains("有效至 2026-10-25 23:59"))
     }
 
+    @Test
+    fun `relative source wording is not recalculated as current semantics`() {
+        val text = MemoryV2TemporalPolicy.renderTiming(
+            temporalJson = temporal(
+                localDate = "2026-10-25",
+                original = "明天",
+            ),
+            expiresAtEpochSeconds = null,
+            fallbackTimezone = "Asia/Shanghai",
+        ).orEmpty()
+
+        assertTrue(text.startsWith("2026-10-25"))
+        assertTrue(text.contains("来源原话：明天"))
+        assertTrue("3天前" !in text)
+    }
+
     private fun temporal(localDate: String?, original: String): String {
         return JSONObject()
             .put("occurred_at", JSONObject.NULL)

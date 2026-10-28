@@ -1,9 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">代理</string>
-    <string name="accessibility_description">按固定坐标截图、点击并记录前台应用，不读取微信界面内容</string>
+    <string name="accessibility_description">读取当前屏幕、识别微信聊天内容并执行点击；仅在用户启用后运行</string>
     <string name="ime_name">代理输入法</string>
-    <string name="ime_subtype_label">中文测试输入</string>
+    <string name="ime_subtype_label">中文回复输入</string>
     <string name="status_with_time">%1$s\n\n%2$s</string>
     <string name="screenshot_summary">最近截图 %1$dx%2$d  %3$d KB</string>
     <string name="screenshot_decode_failed">截图文件存在，但图片解码失败</string>

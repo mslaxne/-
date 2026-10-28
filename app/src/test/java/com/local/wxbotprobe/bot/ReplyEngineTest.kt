@@ -47,13 +47,11 @@ class ReplyEngineTest {
 
     private fun config(
         prompt: String = "system",
-        minReplyInterval: Double = 0.0,
-        maxChars: Int = 500,
+        imageInputEnabled: Boolean = false,
     ) = ReplyConfig(
         systemPrompt = prompt,
         personaMessages = emptyList(),
-        minReplyInterval = minReplyInterval,
-        maxReplyChars = maxChars,
+        imageInputEnabled = imageInputEnabled,
     )
 
     private fun message(
@@ -146,20 +144,21 @@ class ReplyEngineTest {
     }
 
     @Test
-    fun `rate limit blocks a quick second reply`() {
-        val client = ScriptedClient("一")
-        val engine = ReplyEngine(config(minReplyInterval = 60.0), client)
+    fun `quick second reply is left to the model`() {
+        val client = ScriptedClient("一", "二")
+        val engine = ReplyEngine(config(), client)
         engine.handle(message("一", id = "a", now = 1_000.0))
         val second = engine.handle(message("二", id = "b", now = 1_000.5))
-        assertEquals("rate limited", second.skippedReason)
+        assertTrue(second.sent)
+        assertEquals("二", second.text)
     }
 
     @Test
-    fun `reply is clamped to configured maximum`() {
+    fun `reply text is not hard truncated`() {
         val client = ScriptedClient("x".repeat(100))
-        val result = ReplyEngine(config(maxChars = 10), client).handle(message("hi"))
-        assertEquals(10, result.text.length)
-        assertTrue(result.text.endsWith("…"))
+        val result = ReplyEngine(config(), client).handle(message("hi"))
+        assertEquals(100, result.text.length)
+        assertFalse(result.text.endsWith("…"))
     }
 
     @Test
@@ -320,5 +319,166 @@ class ReplyEngineTest {
             listOf("快照问题", "快照回答", "新问题"),
             second.takeLast(3).map { it.content },
         )
+    }
+
+    @Test
+    fun `current image is attached to the latest user message`() {
+        val client = ScriptedClient("看到了")
+        val image = ChatImage(
+            bytes = byteArrayOf(1, 2, 3),
+            width = 640,
+            height = 480,
+            sha256 = "image-a",
+        )
+        val history = listOf(
+            ChatMessage("assistant", "发来看看"),
+            ChatMessage("user", "[[图片]]"),
+        )
+
+        ReplyEngine(config(imageInputEnabled = true), client).handle(
+            IncomingMessage(
+                id = "image-1",
+                text = "[[图片]]",
+                nowSeconds = 1_000.0,
+                images = listOf(image),
+            ),
+            conversationHistory = history,
+        )
+
+        val messages = client.calls.single()
+        assertEquals(listOf("image-a"), messages.last().images.map { it.sha256 })
+        assertTrue(messages.any { it.content.contains(ReplyEngine.CHAT_IMAGE_NOTE) })
+    }
+
+    @Test
+    fun `visual burst reply decision parses reply and carries screenshot`() {
+        val client = ScriptedClient(
+            """{"action":"reply","reply":"我现在看到了"}""",
+        )
+        val image = ChatImage(
+            bytes = byteArrayOf(1, 2, 3),
+            width = 1080,
+            height = 2400,
+            mimeType = "image/png",
+            sha256 = "screen-a",
+        )
+
+        val result = ReplyEngine(
+            config(imageInputEnabled = true),
+            client,
+        ).handleVisualBurst(
+            IncomingMessage(
+                id = "visual-1",
+                text = "请根据截图判断",
+                nowSeconds = 1_000.0,
+                images = listOf(image),
+            ),
+            conversationHistory = listOf(
+                ChatMessage("assistant", "上一句"),
+                ChatMessage("user", "请根据截图判断"),
+            ),
+            commitReply = false,
+        )
+
+        assertTrue(result.sent)
+        assertEquals(ReplyDecisionAction.REPLY, result.decisionAction)
+        assertEquals("我现在看到了", result.text)
+        val messages = client.calls.single()
+        assertTrue(
+            messages.any { it.content.contains(ReplyEngine.VISUAL_BURST_DECISION_NOTE) },
+        )
+        assertEquals(listOf("screen-a"), messages.last().images.map { it.sha256 })
+    }
+
+    @Test
+    fun `plain wait and silent control lines do not produce reply text`() {
+        listOf(
+            "WAIT" to ReplyDecisionAction.WAIT,
+            "SILENT" to ReplyDecisionAction.SILENT,
+        ).forEach { (action, expected) ->
+            val client = ScriptedClient(action)
+            val result = ReplyEngine(
+                config(imageInputEnabled = true),
+                client,
+            ).handleVisualBurst(
+                IncomingMessage(
+                    id = "visual-$action",
+                    text = "请根据截图判断",
+                    nowSeconds = 1_000.0,
+                    images = listOf(
+                        ChatImage(
+                            bytes = byteArrayOf(1),
+                            width = 1080,
+                            height = 2400,
+                            mimeType = "image/png",
+                        ),
+                    ),
+                ),
+                commitReply = false,
+            )
+
+            assertEquals(expected, result.decisionAction)
+            assertFalse(result.sent)
+            assertEquals("", result.text)
+        }
+    }
+
+    @Test
+    fun `natural visual response is treated as reply text`() {
+        val result = ReplyEngine(
+            config(imageInputEnabled = true),
+            ScriptedClient("好的，我回复你"),
+        ).handleVisualBurst(
+            IncomingMessage(
+                id = "visual-invalid",
+                text = "请根据截图判断",
+                nowSeconds = 1_000.0,
+                images = listOf(
+                    ChatImage(
+                        bytes = byteArrayOf(1),
+                        width = 1080,
+                        height = 2400,
+                        mimeType = "image/png",
+                    ),
+                ),
+            ),
+            commitReply = false,
+        )
+
+        assertTrue(result.sent)
+        assertEquals("好的，我回复你", result.text)
+        assertEquals(ReplyDecisionAction.REPLY, result.decisionAction)
+    }
+
+    @Test
+    fun `control words inside natural text do not suppress the reply`() {
+        listOf(
+            "wait，我看看你刚才说的",
+            "我想到 {这个} 说法，挺有意思",
+        ).forEachIndexed { index, text ->
+            val result = ReplyEngine(
+                config(imageInputEnabled = true),
+                ScriptedClient(text),
+            ).handleVisualBurst(
+                IncomingMessage(
+                    id = "visual-natural-$index",
+                    text = "请根据截图判断",
+                    nowSeconds = 1_000.0,
+                    images = listOf(
+                        ChatImage(
+                            bytes = byteArrayOf(1),
+                            width = 1080,
+                            height = 2400,
+                            mimeType = "image/png",
+                        ),
+                    ),
+                ),
+                commitReply = false,
+            )
+
+            assertTrue(result.sent)
+            assertEquals(text, result.text)
+            assertEquals(ReplyDecisionAction.REPLY, result.decisionAction)
+        }
     }
 }

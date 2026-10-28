@@ -1,20 +1,26 @@
 package com.local.wxbotprobe.loop
 
 import android.content.Context
+import android.graphics.BitmapFactory
 import com.local.wxbotprobe.api.ModelClientFactory
+import com.local.wxbotprobe.api.ModelSettings
 import com.local.wxbotprobe.bot.ConversationStore
 import com.local.wxbotprobe.bot.ChatMessage
 import com.local.wxbotprobe.bot.ChatClient
+import com.local.wxbotprobe.bot.ChatImage
 import com.local.wxbotprobe.bot.IncomingMessage
 import com.local.wxbotprobe.bot.PersonaData
 import com.local.wxbotprobe.bot.PersonaProfileCodec
 import com.local.wxbotprobe.bot.PersonaText
+import com.local.wxbotprobe.bot.PersistedReplyImage
 import com.local.wxbotprobe.bot.ReplyConfig
+import com.local.wxbotprobe.bot.ReplyDecisionAction
 import com.local.wxbotprobe.bot.ReplyEngine
 import com.local.wxbotprobe.bot.ReplyRetryStatus
 import com.local.wxbotprobe.bot.ReplyRetryStore
 import com.local.wxbotprobe.bot.ReplyRetryTask
 import com.local.wxbotprobe.bot.ReplyConversationMergePolicy
+import com.local.wxbotprobe.bot.ReplyImageStore
 import com.local.wxbotprobe.bot.RoleplayPolicyService
 import com.local.wxbotprobe.chat.CompletedBurst
 import com.local.wxbotprobe.chat.StartupConversationContext
@@ -40,6 +46,7 @@ class ReplyGenerationCoordinator(
     private val onLog: (String) -> Unit,
 ) {
     private val retryStore = ReplyRetryStore(File(context.filesDir, "reply-retries"))
+    private val imageStore = ReplyImageStore(File(context.filesDir, "reply-images"))
     private var engine: ReplyEngine? = null
     private var enginePersona: String? = null
     private var apiClient: ChatClient? = null
@@ -50,13 +57,24 @@ class ReplyGenerationCoordinator(
     fun beginRun() {
         synchronized(workLock) {
             acceptingWork.set(true)
+            engine = null
+            enginePersona = null
+            apiClient = null
+            val held = retryStore.holdLegacyVisualProtocolFailures()
+            if (held > 0) {
+                onLog("legacy visual retries moved to manual review count=$held")
+                onStatus("$held 个旧视觉重试任务已转为人工检查，不会自动补发。")
+            }
+            cleanupUnreferencedImages()
         }
     }
 
     fun cancelPendingGeneration() {
         val removed = synchronized(workLock) {
             acceptingWork.set(false)
-            retryStore.removeAll()
+            retryStore.removeAll().also {
+                cleanupUnreferencedImages(minimumAgeMillis = 0L)
+            }
         }
         if (removed > 0) {
             onLog("reply pending cancelled at stop count=$removed")
@@ -68,6 +86,7 @@ class ReplyGenerationCoordinator(
         chatTitle: String,
         chatFingerprint: Long,
         conversationKey: String,
+        screenshot: File? = null,
     ) {
         if (!acceptingWork.get() || !canAutoSend()) {
             onLog("burst ignored agent inactive")
@@ -84,6 +103,14 @@ class ReplyGenerationCoordinator(
         }
         val source = File(directory, "burst-$stamp.json")
         val text = burst.items.joinToString("\n") { it.text }
+        val attachments = mutableListOf<String>()
+        val replyScreenshot = if (ModelSettings.load(context).supportsVision) {
+            persistReplyScreenshot(screenshot)
+        } else {
+            screenshot?.delete()
+            null
+        }
+        replyScreenshot?.let { attachments += it.file.absolutePath }
         val root = JSONObject()
             .put("receivedAt", System.currentTimeMillis())
             .put("isGroup", burst.isGroup)
@@ -91,16 +118,47 @@ class ReplyGenerationCoordinator(
             .put("conversationKey", conversationKey)
             .put("chatFingerprint", java.lang.Long.toHexString(chatFingerprint))
             .put("text", text)
+            .apply {
+                if (replyScreenshot != null) {
+                    put("replyMode", "window_screenshot")
+                    put("replyScreenshotRef", replyScreenshot.reference)
+                    put("replyScreenshotSha256", replyScreenshot.sha256)
+                    put("replyScreenshotWidth", replyScreenshot.width)
+                    put("replyScreenshotHeight", replyScreenshot.height)
+                    put("replyScreenshotMimeType", replyScreenshot.mimeType)
+                }
+            }
             .put(
                 "items",
                 JSONArray().apply {
-                    burst.items.forEach {
+                    burst.items.forEach { item ->
+                        val imageRef = if (replyScreenshot == null) {
+                            persistScreenImage(
+                                bytes = item.image,
+                                width = item.imageWidth,
+                                height = item.imageHeight,
+                                mimeType = item.imageMimeType,
+                                sha256 = item.imageSha256,
+                            )
+                        } else {
+                            null
+                        }
+                        imageRef?.let { attachments += it.file.absolutePath }
                         put(
                             JSONObject()
-                                .put("text", it.text)
-                                .put("kind", it.kind.name.lowercase())
-                                .put("y", it.y)
-                                .put("xLeft", it.xLeft),
+                                .put("text", item.text)
+                                .put("kind", item.kind.name.lowercase())
+                                .put("y", item.y)
+                                .put("xLeft", item.xLeft)
+                                .apply {
+                                    if (imageRef != null) {
+                                        put("imageRef", imageRef.reference)
+                                        put("imageSha256", imageRef.sha256)
+                                        put("imageWidth", item.imageWidth)
+                                        put("imageHeight", item.imageHeight)
+                                        put("imageMimeType", item.imageMimeType)
+                                    }
+                                },
                         )
                     }
                 },
@@ -120,11 +178,13 @@ class ReplyGenerationCoordinator(
                     conversationKey = conversationKey,
                     text = text,
                     isGroup = burst.isGroup,
+                    attachments = attachments,
                 )
             }
         }
         if (task == null) {
             source.delete()
+            cleanupUnreferencedImages()
             onLog("burst cancelled before reply task enqueue")
             return
         }
@@ -133,6 +193,7 @@ class ReplyGenerationCoordinator(
         onNotification("收到 ${burst.items.size} 条消息，已合并")
         onLog(
             "burst items=${burst.items.size} group=${burst.isGroup} " +
+                "context=${if (replyScreenshot != null) "window_screenshot" else "text"} " +
                 "file=${source.absolutePath} replyTask=${task.id}",
         )
     }
@@ -231,7 +292,7 @@ class ReplyGenerationCoordinator(
             context.getExternalFilesDir(null) ?: context.filesDir,
             "inbox/startup-${startup.snapshotId}.json",
         )
-        writeStartupSource(
+        val attachments = writeStartupSource(
             output = source,
             startup = startup,
             chatTitle = chatTitle,
@@ -250,10 +311,12 @@ class ReplyGenerationCoordinator(
                     text = startup.lastMessageText,
                     isGroup = startup.isGroup,
                     taskId = startup.taskId,
+                    attachments = attachments,
                 )
             }
         }
         if (task == null) {
+            cleanupUnreferencedImages()
             onLog("startup context cancelled before reply task enqueue")
             return false
         }
@@ -281,12 +344,13 @@ class ReplyGenerationCoordinator(
         chatTitle: String,
         chatFingerprint: Long,
         conversationKey: String,
-    ) {
+    ): List<String> {
         val directory = output.parentFile
             ?: throw IllegalStateException("startup source directory is unavailable")
         if (!directory.exists() && !directory.mkdirs()) {
             throw IllegalStateException("无法创建首屏上下文目录")
         }
+        val attachments = mutableListOf<String>()
         val root = JSONObject()
             .put("schemaVersion", 1)
             .put("kind", "startup")
@@ -300,11 +364,31 @@ class ReplyGenerationCoordinator(
             .put(
                 "items",
                 JSONArray().apply {
-                    startup.messages.forEach {
+                    startup.messages.forEach { message ->
+                        val imageRef = persistScreenImage(
+                            bytes = message.image?.bytes,
+                            width = message.image?.width ?: 0,
+                            height = message.image?.height ?: 0,
+                            mimeType = message.image?.mimeType.orEmpty(),
+                            sha256 = message.image?.sha256.orEmpty(),
+                        )
+                        imageRef?.let { attachments += it.file.absolutePath }
                         put(
                             JSONObject()
-                                .put("role", it.role)
-                                .put("text", it.text),
+                                .put("role", message.role)
+                                .put("text", message.text)
+                                .apply {
+                                    if (imageRef != null) {
+                                        put("imageRef", imageRef.reference)
+                                        put("imageSha256", imageRef.sha256)
+                                        put("imageWidth", message.image?.width ?: 0)
+                                        put("imageHeight", message.image?.height ?: 0)
+                                        put(
+                                            "imageMimeType",
+                                            message.image?.mimeType.orEmpty(),
+                                        )
+                                    }
+                                },
                         )
                     }
                 },
@@ -320,6 +404,7 @@ class ReplyGenerationCoordinator(
             StandardCopyOption.REPLACE_EXISTING,
             StandardCopyOption.ATOMIC_MOVE,
         )
+        return attachments
     }
 
     private fun readStartupPrompt(source: File): StartupPrompt? {
@@ -348,13 +433,165 @@ class ReplyGenerationCoordinator(
                 if (role !in setOf("user", "assistant") || text.isBlank()) {
                     continue
                 }
-                add(ChatMessage(role, text))
+                val image = readSourceImage(item)
+                add(
+                    ChatMessage(
+                        role = role,
+                        content = text,
+                        images = listOfNotNull(image),
+                    ),
+                )
             }
         }
         if (messages.isEmpty() || messages.last().role != "user") {
             throw IllegalStateException("首屏上下文消息顺序无效：${source.absolutePath}")
         }
         return StartupPrompt(snapshotId = snapshotId, messages = messages)
+    }
+
+    private fun persistScreenImage(
+        bytes: ByteArray?,
+        width: Int,
+        height: Int,
+        mimeType: String,
+        sha256: String,
+    ): PersistedReplyImage? {
+        if (bytes == null || bytes.isEmpty() || width <= 0 || height <= 0) {
+            return null
+        }
+        return imageStore.persist(
+            ChatImage(
+                bytes = bytes,
+                width = width,
+                height = height,
+                mimeType = mimeType.ifBlank { "image/jpeg" },
+                sha256 = sha256,
+            ),
+        )
+    }
+
+    private fun persistReplyScreenshot(
+        source: File?,
+    ): PersistedReplyImage? {
+        if (source == null || !source.isFile) {
+            return null
+        }
+        return try {
+            if (source.length() <= 0L || source.length() > MAX_SCREENSHOT_BYTES) {
+                return null
+            }
+            val options = BitmapFactory.Options().apply {
+                inJustDecodeBounds = true
+            }
+            BitmapFactory.decodeFile(source.absolutePath, options)
+            if (options.outWidth <= 0 || options.outHeight <= 0) {
+                return null
+            }
+            val bytes = source.readBytes()
+            if (bytes.isEmpty()) {
+                return null
+            }
+            imageStore.persist(
+                ChatImage(
+                    bytes = bytes,
+                    width = options.outWidth,
+                    height = options.outHeight,
+                    mimeType = "image/png",
+                ),
+            )
+        } finally {
+            source.delete()
+        }
+    }
+
+    private fun readSourceImage(item: JSONObject): ChatImage? {
+        val reference = item.optString("imageRef")
+        if (reference.isBlank()) {
+            return null
+        }
+        return imageStore.load(
+            reference = reference,
+            width = item.optInt("imageWidth"),
+            height = item.optInt("imageHeight"),
+            mimeType = item.optString("imageMimeType", "image/jpeg"),
+            sha256 = item.optString("imageSha256"),
+        )
+    }
+
+    private fun readSourceScreenshot(source: File): ChatImage? {
+        if (!source.isFile) {
+            return null
+        }
+        val root = runCatching { JSONObject(source.readText()) }.getOrNull()
+            ?: return null
+        val reference = root.optString("replyScreenshotRef")
+        if (reference.isBlank()) {
+            return null
+        }
+        return imageStore.load(
+            reference = reference,
+            width = root.optInt("replyScreenshotWidth"),
+            height = root.optInt("replyScreenshotHeight"),
+            mimeType = root.optString("replyScreenshotMimeType", "image/png"),
+            sha256 = root.optString("replyScreenshotSha256"),
+        )
+    }
+
+    private fun readSourceImages(source: File): List<ChatImage> {
+        readSourceScreenshot(source)?.let {
+            return listOf(it)
+        }
+        if (!source.isFile) {
+            return emptyList()
+        }
+        val root = runCatching { JSONObject(source.readText()) }.getOrNull()
+            ?: return emptyList()
+        val items = root.optJSONArray("items") ?: return emptyList()
+        return buildList {
+            for (index in 0 until items.length()) {
+                val item = items.optJSONObject(index) ?: continue
+                readSourceImage(item)?.let(::add)
+            }
+        }
+    }
+
+    private fun readSourceAttachmentPaths(source: File): List<String> {
+        if (!source.isFile) {
+            return emptyList()
+        }
+        val root = runCatching { JSONObject(source.readText()) }.getOrNull()
+            ?: return emptyList()
+        val items = root.optJSONArray("items") ?: return emptyList()
+        return buildList {
+            val screenshotRef = root.optString("replyScreenshotRef")
+            imageStore.resolve(screenshotRef)?.let {
+                add(it.absolutePath)
+            }
+            for (index in 0 until items.length()) {
+                val item = items.optJSONObject(index) ?: continue
+                val reference = item.optString("imageRef")
+                imageStore.resolve(reference)?.let {
+                    add(it.absolutePath)
+                }
+            }
+        }.distinct()
+    }
+
+    private fun removeRetryTask(task: ReplyRetryTask) {
+        retryStore.remove(task.id)
+        cleanupUnreferencedImages()
+    }
+
+    private fun cleanupUnreferencedImages(
+        minimumAgeMillis: Long = IMAGE_ATTACHMENT_CLEANUP_GRACE_MS,
+    ) {
+        val referenced = retryStore.all()
+            .flatMap { it.attachments }
+            .toSet()
+        imageStore.cleanupUnreferenced(
+            referencedPaths = referenced,
+            minimumAgeMillis = minimumAgeMillis,
+        )
     }
 
     fun drainRetries(
@@ -423,7 +660,7 @@ class ReplyGenerationCoordinator(
         val generationId = retryTask?.id
             ?: "direct-${System.currentTimeMillis()}-${System.nanoTime()}"
         if (!acceptingWork.get() || !canAutoSend()) {
-            retryTask?.let { retryStore.remove(it.id) }
+            retryTask?.let(::removeRetryTask)
             onLog("reply generation skipped agent inactive id=$generationId")
             return
         }
@@ -442,7 +679,7 @@ class ReplyGenerationCoordinator(
                                 "status=${existingReply.deliveryStatus} id=$generationId",
                         )
                     }
-                    retryTask?.let { retryStore.remove(it.id) }
+                    retryTask?.let(::removeRetryTask)
                     return
                 }
                 StoredReplyDisposition.MANUAL_REVIEW -> {
@@ -454,7 +691,7 @@ class ReplyGenerationCoordinator(
                         "reply manual review status=${existingReply.deliveryStatus} " +
                             "id=$generationId file=${replyFile.absolutePath}",
                     )
-                    retryTask?.let { retryStore.remove(it.id) }
+                    retryTask?.let(::removeRetryTask)
                     return
                 }
                 StoredReplyDisposition.REUSE -> {
@@ -469,13 +706,35 @@ class ReplyGenerationCoordinator(
                         chatFingerprint = chatFingerprint,
                         conversationId = conversationId,
                     )
-                    retryTask?.let { retryStore.remove(it.id) }
+                    retryTask?.let(::removeRetryTask)
                     return
                 }
                 StoredReplyDisposition.ABSENT -> Unit
             }
         }
+        val storedVisualDecision = readStoredVisualDecision(source)
+        if (
+            retryTask != null &&
+            (
+                storedVisualDecision == ReplyDecisionAction.WAIT ||
+                    storedVisualDecision == ReplyDecisionAction.SILENT
+                )
+        ) {
+            removeRetryTask(retryTask)
+            onStatus("本轮视觉决定已处理，不会重复调用模型。")
+            onLog(
+                "visual decision recovered action=" +
+                    storedVisualDecision.name.lowercase() +
+                    " id=${retryTask.id}",
+            )
+            return
+        }
         val startupPrompt = readStartupPrompt(source)
+        val sourceScreenshot = if (startupPrompt == null) {
+            readSourceScreenshot(source)
+        } else {
+            null
+        }
 
         val engine = replyEngine(persona, contactId, personaId)
         if (engine == null) {
@@ -516,10 +775,15 @@ class ReplyGenerationCoordinator(
             id = startupPrompt?.let {
                 "startup-${it.snapshotId}-${retryTask?.attempts ?: 0}"
             } ?: "android-${System.currentTimeMillis()}-${retryTask?.attempts ?: 0}",
-            text = text,
+            text = if (sourceScreenshot != null) {
+                "请根据当前微信聊天窗口截图判断是否回复。"
+            } else {
+                text
+            },
             isGroup = isGroup,
             senderName = "对方",
             nowSeconds = System.currentTimeMillis() / 1000.0,
+            images = sourceScreenshot?.let(::listOf) ?: readSourceImages(source),
         )
         val memoryContext = replyContext.memoryText
         val persistedConversation = if (replyContext.includesConversation) {
@@ -541,22 +805,30 @@ class ReplyGenerationCoordinator(
                 "persistedMessages=${replyContext.conversationMessages.size} " +
                 "historyMessages=${conversationHistory?.size ?: 0} " +
                 "startupVisibleMessages=${startupPrompt?.messages?.size ?: 0} " +
+                "contextMode=${if (sourceScreenshot != null) "window_screenshot" else "text"} " +
+                "images=${incoming.images.size} " +
                 "provider=${replyContext.providerId} " +
                 "window=${replyContext.providerWindowTokens} " +
                 "budgetOmitted=${replyContext.budgetOmittedMessageCount} " +
                 "snapshot=${replyContext.snapshotSha256?.take(12).orEmpty()} " +
                 "startup=${startupPrompt != null}",
         )
-        val result = if (startupPrompt != null) {
-            engine.handleColdStart(
+        val result = when {
+            startupPrompt != null -> engine.handleColdStart(
                 incoming,
                 conversationId,
                 memoryContext,
                 conversationHistory,
                 commitReply = false,
             )
-        } else {
-            engine.handle(
+            sourceScreenshot != null -> engine.handleVisualBurst(
+                incoming,
+                conversationId,
+                memoryContext,
+                conversationHistory,
+                commitReply = false,
+            )
+            else -> engine.handle(
                 incoming,
                 conversationId,
                 memoryContext,
@@ -565,9 +837,50 @@ class ReplyGenerationCoordinator(
             )
         }
         if (!acceptingWork.get() || !canAutoSend()) {
-            retryTask?.let { retryStore.remove(it.id) }
+            retryTask?.let(::removeRetryTask)
             onLog("reply generation discarded after stop id=$generationId")
             return
+        }
+        when (result.decisionAction) {
+            ReplyDecisionAction.WAIT -> {
+                runCatching {
+                    updateSourceVisualDecision(source, result.decisionAction)
+                }.onFailure {
+                    onLog(
+                        "visual decision persist failed id=$generationId " +
+                            it.stackTraceToString(),
+                    )
+                }
+                retryTask?.let(::removeRetryTask)
+                onStatus("模型判断对方可能还没说完，本轮先不回复。")
+                onNotification("等待对方继续")
+                onLog(
+                    "visual decision wait id=$generationId " +
+                        "images=${incoming.images.size}",
+                )
+                return
+            }
+            ReplyDecisionAction.SILENT -> {
+                runCatching {
+                    updateSourceVisualDecision(source, result.decisionAction)
+                }.onFailure {
+                    onLog(
+                        "visual decision persist failed id=$generationId " +
+                            it.stackTraceToString(),
+                    )
+                }
+                retryTask?.let(::removeRetryTask)
+                onStatus("模型判断本轮无需接话，已保持沉默。")
+                onNotification("本轮无需回复")
+                onLog(
+                    "visual decision silent id=$generationId " +
+                        "images=${incoming.images.size}",
+                )
+                return
+            }
+            ReplyDecisionAction.REPLY,
+            null,
+            -> Unit
         }
         if (result.budgetBlocked) {
             val message = result.error.ifBlank { "daily API budget exceeded" }
@@ -612,7 +925,7 @@ class ReplyGenerationCoordinator(
                     recordRetryFailure(retryTask, source, result.error)
                 }
             } else {
-                retryTask?.let { retryStore.remove(it.id) }
+                retryTask?.let(::removeRetryTask)
                 val reason = result.skippedReason.ifBlank { "未知原因" }
                 onStatus("回复已跳过：$reason")
                 onNotification("回复已跳过")
@@ -656,7 +969,7 @@ class ReplyGenerationCoordinator(
             chatFingerprint = chatFingerprint,
             conversationId = conversationId,
         )
-        retryTask?.let { retryStore.remove(it.id) }
+        retryTask?.let(::removeRetryTask)
     }
 
     private fun enqueueRetry(
@@ -678,6 +991,7 @@ class ReplyGenerationCoordinator(
             text = text,
             isGroup = isGroup,
             nowMillis = now,
+            attachments = readSourceAttachmentPaths(source),
         )
         val task = if (countAttempt) {
             queued.recordFailure(now, error)
@@ -876,15 +1190,62 @@ class ReplyGenerationCoordinator(
         )
     }
 
+    private fun readStoredVisualDecision(source: File): ReplyDecisionAction? {
+        if (!source.isFile) {
+            return null
+        }
+        val value = runCatching {
+            JSONObject(source.readText()).optString("visualDecision")
+        }.getOrNull()
+        return when (value?.lowercase()) {
+            "wait" -> ReplyDecisionAction.WAIT
+            "silent" -> ReplyDecisionAction.SILENT
+            else -> null
+        }
+    }
+
+    private fun updateSourceVisualDecision(
+        file: File,
+        action: ReplyDecisionAction,
+    ) {
+        if (!file.isFile) {
+            return
+        }
+        val root = runCatching { JSONObject(file.readText()) }.getOrNull()
+            ?: return
+        root.put("visualDecision", action.name.lowercase())
+        root.put("visualDecisionAt", System.currentTimeMillis())
+        val temporary = File(file.parentFile, "${file.name}.tmp")
+        FileOutputStream(temporary).use {
+            it.write(root.toString(2).toByteArray(Charsets.UTF_8))
+            it.fd.sync()
+        }
+        Files.move(
+            temporary.toPath(),
+            file.toPath(),
+            StandardCopyOption.REPLACE_EXISTING,
+            StandardCopyOption.ATOMIC_MOVE,
+        )
+    }
+
     private fun replyEngine(
         persona: PersonaData,
         contactId: String,
         personaId: String,
     ): ReplyEngine? {
-        val key = "$contactId|$personaId|${PersonaProfileCodec.encode(persona)}"
+        val modelConfiguration = ModelSettings.load(context)
+        val modelKey = listOf(
+            modelConfiguration.provider.storageId,
+            modelConfiguration.baseUrl.trim().trimEnd('/'),
+            modelConfiguration.model.trim(),
+            modelConfiguration.supportsVision,
+        ).joinToString("|")
+        val key = "$contactId|$personaId|$modelKey|" +
+            PersonaProfileCodec.encode(persona)
         if (engine != null && enginePersona == key) {
             return engine
         }
+        apiClient = null
         val client = modelClient() ?: return null
         val config = ReplyConfig(
             systemPrompt = PersonaText.systemPrompt(persona),
@@ -892,8 +1253,7 @@ class ReplyGenerationCoordinator(
             temperature = 1.0,
             maxTokens = 500,
             historyTurns = 0,
-            minReplyInterval = 2.0,
-            maxReplyChars = 200,
+            imageInputEnabled = modelConfiguration.supportsVision,
             identityQuestionPolicy = persona.identityQuestionPolicy,
             roleplayPolicyProvider = {
                 roleplayPolicies.effectivePolicy(
@@ -935,5 +1295,7 @@ class ReplyGenerationCoordinator(
     companion object {
         private const val MISSING_API_KEY_ERROR = "模型配置不完整"
         private const val BUDGET_BLOCKED_PREFIX = "已达到每日 API 费用上限"
+        private const val IMAGE_ATTACHMENT_CLEANUP_GRACE_MS = 120_000L
+        private const val MAX_SCREENSHOT_BYTES = 8_000_000L
     }
 }

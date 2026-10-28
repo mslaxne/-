@@ -67,4 +67,25 @@ class ReplyConversationMergePolicyTest {
             ReplyConversationMergePolicy.merge(persisted, visible),
         )
     }
+
+    @Test
+    fun `same placeholder with different image hash is not merged`() {
+        fun image(sha: String) = ChatImage(
+            bytes = sha.toByteArray(),
+            width = 100,
+            height = 100,
+            sha256 = sha,
+        )
+        val persisted = listOf(
+            ChatMessage("user", "[[图片]]", listOf(image("old"))),
+        )
+        val visible = listOf(
+            ChatMessage("user", "[[图片]]", listOf(image("new"))),
+        )
+
+        assertEquals(
+            persisted + visible,
+            ReplyConversationMergePolicy.merge(persisted, visible),
+        )
+    }
 }

@@ -41,8 +41,13 @@ The app can now deliver a generated reply without ADB input commands.
 - Generation task IDs now determine deterministic reply filenames and delivery
   IDs. Recovery reuses an existing reply and existing SENT delivery rather than
   calling the model or sending the reply again.
-- `ReplyContentGuard` persists the last accepted normalized reply per contact
-  and suppresses an identical new reply for 30 seconds.
+- Reply text is not hard-truncated at a fixed character count. A newly generated
+  reply is not suppressed merely because its normalized text matches the
+  previous reply within 30 seconds. Deterministic task IDs, reply-file reuse and
+  delivery IDs remain the duplicate-send boundary.
+- There is no programmatic minimum interval that discards a quick follow-up.
+  Whether to answer now, wait or stay silent remains the model decision; send
+  authorization, quiet hours and daily operating caps still apply.
 - Reply retry and delivery queues select the first ready task, so an older task
   waiting for backoff does not block a newer ready task.
 - Startup replies use a deterministic ID derived from the contact and visible
@@ -63,10 +68,11 @@ The app can now deliver a generated reply without ADB input commands.
   `UNKNOWN` after restart and is never auto-resent; manual review is required.
 - Reply JSON is updated with `deliveryStatus`, `sentParts`, `totalParts` and the
   last error. Deliveries wait for the original chat and use bounded backoff.
-- Model-generation errors are persisted under `files/reply-retries/`. Retries
-  use the original burst text and chat fingerprint, with a five-attempt cap and
-  5/10/20/40-second backoff. Skipped messages such as disabled group replies do
-  not enter this queue.
+- Model-generation errors are persisted under `files/reply-retries/`. Text
+  retries use the original burst; vision retries reuse the task's persisted
+  full-window screenshot. Both use the original chat fingerprint, a five-attempt
+  cap and 5/10/20/40-second backoff. Skipped messages such as disabled group
+  replies do not enter this queue.
 - The Home deployment summary shows waiting and permanently failed generation
   counts in addition to queued deliveries.
 - Every queued delivery is checked before sending against the bound chat
@@ -81,6 +87,19 @@ The app can now deliver a generated reply without ADB input commands.
   completion token usage. Pricing uses conservative peak rates: flash
   `$0.30/M` input and `$1.20/M` output, pro `$1.32/M` input and `$3.96/M`
   output.
+- Vision-capable models receive one full current WeChat-window PNG for each
+  completed burst through the OpenAI-compatible `image_url` content channel.
+  The image can include the status bar, notifications, visible history and
+  images inside the chat. This is an explicit privacy boundary, not selective
+  screen processing.
+- A natural model response is the reply text. Exact `WAIT` or `SILENT` control
+  lines do not create a delivery; JSON action objects remain supported for
+  compatibility. The decision is written back to the burst source so recovery
+  cannot process the same terminal decision again.
+- Screenshot attachments for unfinished generations are stored under
+  app-private `files/reply-images/`. Retry tasks retain their paths across
+  process restart, and runtime cleanup protects attachments referenced by an
+  active task.
 
 ## Custom IME correction
 
@@ -110,4 +129,4 @@ Green send coordinates observed with the legacy visible BotIme:
 
 ## Not yet implemented
 
-- Search and vision steps.
+- Search steps.

@@ -68,6 +68,7 @@ class RuntimeDataCleaner(
     internalCaptures: File,
     private val protectedFiles: Set<String>,
     private val internalCalibration: File? = null,
+    private val internalReplyImages: File? = null,
 ) {
     private val targetDirectories = buildList {
         listOf(
@@ -87,6 +88,7 @@ class RuntimeDataCleaner(
         ).forEach { add(File(externalRoot, it)) }
         add(internalCaptures)
         internalCalibration?.let(::add)
+        internalReplyImages?.let(::add)
     }
 
     fun totalBytes(): Long {
@@ -207,12 +209,18 @@ class RuntimeDataCleaner(
                 if (task.sourceFile.isNotBlank()) {
                     protected += File(task.sourceFile).normalizedPath()
                 }
+                task.attachments.forEach { attachment ->
+                    if (attachment.isNotBlank()) {
+                        protected += File(attachment).normalizedPath()
+                    }
+                }
             }
             return RuntimeDataCleaner(
                 externalRoot = externalRoot,
                 internalCaptures = File(context.filesDir, "captures"),
                 protectedFiles = protected,
                 internalCalibration = File(context.filesDir, "calibration"),
+                internalReplyImages = File(context.filesDir, "reply-images"),
             )
         }
 

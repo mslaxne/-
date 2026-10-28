@@ -1,10 +1,12 @@
 package com.local.wxbotprobe.chat
 
+import com.local.wxbotprobe.bot.ChatImage
 import java.security.MessageDigest
 
 data class StartupConversationMessage(
     val role: String,
     val text: String,
+    val image: ChatImage? = null,
 )
 
 data class StartupConversationContext(
@@ -66,7 +68,19 @@ object StartupConversationContextBuilder {
         if (text.isBlank()) {
             return null
         }
-        return StartupConversationMessage(role = role, text = text)
+        return StartupConversationMessage(
+            role = role,
+            text = text,
+            image = item.image?.let {
+                ChatImage(
+                    bytes = it,
+                    width = item.imageWidth,
+                    height = item.imageHeight,
+                    mimeType = item.imageMimeType,
+                    sha256 = item.imageSha256,
+                )
+            },
+        )
     }
 
     private fun identityText(
@@ -81,6 +95,9 @@ object StartupConversationContextBuilder {
             messages.forEach {
                 append(it.role).append('\u0000')
                 append(TextRules.normalise(it.text)).append('\n')
+                append(it.image?.sha256.orEmpty()).append('\n')
+                append(it.image?.width ?: 0).append('x')
+                append(it.image?.height ?: 0).append('\n')
             }
         }
     }

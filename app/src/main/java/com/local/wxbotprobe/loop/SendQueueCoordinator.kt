@@ -14,7 +14,6 @@ import com.local.wxbotprobe.send.AutoSendUsageStore
 import com.local.wxbotprobe.send.Delivery
 import com.local.wxbotprobe.send.DeliveryStatus
 import com.local.wxbotprobe.send.DeliveryStore
-import com.local.wxbotprobe.send.ReplyContentGuard
 import com.local.wxbotprobe.send.WeChatSender
 import java.io.File
 import java.io.FileOutputStream
@@ -42,9 +41,6 @@ class SendQueueCoordinator(
     )
     private val sendUsage = AutoSendUsageStore(context)
     private val apiUsage = ApiUsageStore(context)
-    private val replyContentGuard = ReplyContentGuard(
-        File(context.filesDir, "reply-content-guard.json"),
-    )
     private var lastBlockReason: AutoSendBlockReason? = null
     private var lastInputFieldHint: ScreenPoint? = null
 
@@ -98,21 +94,6 @@ class SendQueueCoordinator(
         val generationId = deliveryId ?: "${
             System.currentTimeMillis()
         }-${System.nanoTime()}"
-        if (!replyContentGuard.tryAccept(
-                conversationKey = conversationKey,
-                text = replyText,
-                generationId = generationId,
-            )
-        ) {
-            markReplyContentSuppressed(replyFile)
-            onStatus("检测到短时间重复回复，已抑制本条发送。")
-            onNotification("重复回复已抑制")
-            onLog(
-                "delivery suppressed reason=duplicate_content " +
-                    "chat=$conversationKey generation=$generationId",
-            )
-            return null
-        }
         val queued = store.enqueue(
             sourceReply = replyText,
             sourceReplyFile = replyFile.absolutePath,
@@ -373,28 +354,6 @@ class SendQueueCoordinator(
         root.put("sentParts", sentParts)
         root.put("totalParts", totalParts)
         root.put("lastError", error)
-        root.put("deliveryUpdatedAt", System.currentTimeMillis())
-        val temporary = File(file.parentFile, "${file.name}.tmp")
-        FileOutputStream(temporary).use {
-            it.write(root.toString(2).toByteArray(Charsets.UTF_8))
-            it.fd.sync()
-        }
-        Files.move(
-            temporary.toPath(),
-            file.toPath(),
-            StandardCopyOption.REPLACE_EXISTING,
-            StandardCopyOption.ATOMIC_MOVE,
-        )
-    }
-
-    private fun markReplyContentSuppressed(file: File) {
-        if (!file.isFile) {
-            return
-        }
-        val root = runCatching { JSONObject(file.readText()) }.getOrNull() ?: return
-        root.put("sent", false)
-        root.put("deliveryStatus", "duplicate_suppressed")
-        root.put("lastError", "same reply was accepted within the duplicate window")
         root.put("deliveryUpdatedAt", System.currentTimeMillis())
         val temporary = File(file.parentFile, "${file.name}.tmp")
         FileOutputStream(temporary).use {

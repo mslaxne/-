@@ -1,7 +1,9 @@
 package com.local.wxbotprobe.bot
 
 import com.local.wxbotprobe.api.ApiBudgetExceededException
+import com.local.wxbotprobe.chat.IMAGE_PLACEHOLDER
 import java.time.ZonedDateTime
+import org.json.JSONObject
 
 data class ReplyConfig(
     val systemPrompt: String,
@@ -9,8 +11,7 @@ data class ReplyConfig(
     val temperature: Double = 1.0,
     val maxTokens: Int = 500,
     val historyTurns: Int = 0,
-    val minReplyInterval: Double = 2.0,
-    val maxReplyChars: Int = 200,
+    val imageInputEnabled: Boolean = false,
     val prefixNote: String = "",
     val identityQuestionPolicy: PersonaIdentityQuestionPolicy =
         PersonaIdentityQuestionPolicy.DISCLOSE_AI,
@@ -61,6 +62,23 @@ class ReplyEngine(
         )
     }
 
+    fun handleVisualBurst(
+        message: IncomingMessage,
+        conversationId: String = "wechat-current",
+        memoryContext: String = "",
+        conversationHistory: List<ChatMessage>? = null,
+        commitReply: Boolean = true,
+    ): ReplyResult {
+        return handleInternal(
+            message = message,
+            conversationId = conversationId,
+            memoryContext = memoryContext,
+            conversationHistory = conversationHistory,
+            commitReply = commitReply,
+            visualDecision = true,
+        )
+    }
+
     private fun handleInternal(
         message: IncomingMessage,
         conversationId: String,
@@ -68,12 +86,13 @@ class ReplyEngine(
         conversationHistory: List<ChatMessage>?,
         commitReply: Boolean,
         coldStartContext: Boolean = false,
+        visualDecision: Boolean = false,
     ): ReplyResult {
         val started = System.nanoTime()
         if (isDuplicate(message.id)) {
             return ReplyResult(skippedReason = "duplicate message id")
         }
-        val skipReason = skipReason(message, conversationId)
+        val skipReason = skipReason(message)
         if (skipReason.isNotEmpty()) {
             return ReplyResult(skippedReason = skipReason)
         }
@@ -87,6 +106,7 @@ class ReplyEngine(
         val roleplayPolicy = config.roleplayPolicyProvider()
         val extraSystem = listOf(
             CONVERSATION_DATA_NOTE,
+            CHAT_IMAGE_NOTE,
             when (roleplayPolicy) {
                 EffectiveRoleplayPolicy.CONFIRMED_NONDISCLOSURE ->
                     ROLEPLAY_NONDISCLOSURE_NOTE
@@ -95,6 +115,7 @@ class ReplyEngine(
                 EffectiveRoleplayPolicy.NOT_APPLICABLE -> ""
             },
             if (coldStartContext) COLD_START_CONTEXT_NOTE else "",
+            if (visualDecision) VISUAL_BURST_DECISION_NOTE else "",
         ).filter { it.isNotBlank() }.joinToString("\n")
 
         try {
@@ -105,6 +126,11 @@ class ReplyEngine(
                     extraSystem,
                     memoryContext,
                     conversationHistory,
+                    currentUserMessage = ChatMessage(
+                        role = "user",
+                        content = userText,
+                        images = message.images,
+                    ),
                 ),
                 config.temperature,
                 config.maxTokens,
@@ -116,13 +142,39 @@ class ReplyEngine(
                     latencyMs = elapsedMs(started),
                 )
             }
+            if (visualDecision) {
+                val decision = parseVisualDecision(completion.text)
+                if (decision.action != ReplyDecisionAction.REPLY) {
+                    return ReplyResult(
+                        latencyMs = elapsedMs(started),
+                        promptTokens = completion.promptTokens,
+                        completionTokens = completion.completionTokens,
+                        model = completion.model,
+                        decisionAction = decision.action,
+                    )
+                }
+                var text = clamp(decision.reply)
+                if (config.prefixNote.isNotEmpty()) {
+                    text = config.prefixNote + text
+                }
+                if (commitReply) {
+                    store.append(conversationId, "assistant", text)
+                }
+                return ReplyResult(
+                    text = text,
+                    latencyMs = elapsedMs(started),
+                    promptTokens = completion.promptTokens,
+                    completionTokens = completion.completionTokens,
+                    model = completion.model,
+                    decisionAction = ReplyDecisionAction.REPLY,
+                )
+            }
             var text = clamp(completion.text)
             if (config.prefixNote.isNotEmpty()) {
                 text = config.prefixNote + text
             }
             if (commitReply) {
                 store.append(conversationId, "assistant", text)
-                store.markReply(conversationId, message.nowSeconds)
             }
             return ReplyResult(
                 text = text,
@@ -153,6 +205,7 @@ class ReplyEngine(
         extraSystem: String = "",
         memoryContext: String = "",
         conversationHistory: List<ChatMessage>? = null,
+        currentUserMessage: ChatMessage? = null,
     ): List<ChatMessage> {
         val messages = mutableListOf<ChatMessage>()
         var prompt = config.systemPrompt.trim()
@@ -167,8 +220,40 @@ class ReplyEngine(
             messages += ChatMessage("system", memoryContext)
         }
         messages += ChatMessage("system", timeNote(quietFor))
-        messages += conversationHistory ?: store.history(conversationId)
+        val history = conversationHistory ?: store.history(conversationId)
+        val historyWithCurrent = if (
+            currentUserMessage != null &&
+            currentUserMessage.images.isNotEmpty()
+        ) {
+            attachImageInput(history, currentUserMessage)
+        } else {
+            history
+        }
+        messages += if (config.imageInputEnabled) {
+            historyWithCurrent
+        } else {
+            historyWithCurrent.map { message ->
+                if (message.images.isEmpty()) {
+                    message
+                } else {
+                    message.copy(images = emptyList())
+                }
+            }
+        }
         return messages
+    }
+
+    private fun attachImageInput(
+        history: List<ChatMessage>,
+        currentUserMessage: ChatMessage,
+    ): List<ChatMessage> {
+        val index = history.indexOfLast { it.role == "user" }
+        if (index < 0) {
+            return history + currentUserMessage
+        }
+        return history.toMutableList().apply {
+            this[index] = currentUserMessage
+        }
     }
 
     fun recordDeliveredReply(
@@ -180,16 +265,11 @@ class ReplyEngine(
             return
         }
         store.append(conversationId, "assistant", text)
-        store.markReply(conversationId, nowSeconds)
     }
 
-    private fun skipReason(message: IncomingMessage, conversationId: String): String {
+    private fun skipReason(message: IncomingMessage): String {
         if (message.text.isBlank()) {
             return "empty message"
-        }
-        val elapsed = message.nowSeconds - store.lastReplyAt(conversationId)
-        if (elapsed < config.minReplyInterval) {
-            return "rate limited"
         }
         return ""
     }
@@ -210,10 +290,50 @@ class ReplyEngine(
     }
 
     private fun clamp(text: String): String {
-        if (config.maxReplyChars <= 0 || text.length <= config.maxReplyChars) {
-            return text
+        return text
+    }
+
+    private fun parseVisualDecision(raw: String): VisualDecision {
+        val trimmed = raw.trim()
+        require(trimmed.isNotEmpty()) { "visual reply text was empty" }
+        val start = trimmed.indexOf('{')
+        val end = trimmed.lastIndexOf('}')
+        val jsonCandidate = trimmed.startsWith("{") ||
+            (trimmed.startsWith("```") && start >= 0 && end > start)
+        if (jsonCandidate) {
+            require(start >= 0 && end > start) {
+                "visual decision JSON was incomplete"
+            }
+            val root = runCatching {
+                JSONObject(trimmed.substring(start, end + 1))
+            }.getOrElse {
+                throw IllegalArgumentException("visual decision JSON was invalid", it)
+            }
+            val action = when (root.optString("action").trim().lowercase()) {
+                "reply" -> ReplyDecisionAction.REPLY
+                "wait" -> ReplyDecisionAction.WAIT
+                "silent" -> ReplyDecisionAction.SILENT
+                else -> throw IllegalArgumentException("visual decision action was invalid")
+            }
+            val reply = if (action == ReplyDecisionAction.REPLY) {
+                root.optString("reply").trim().also {
+                    require(it.isNotEmpty()) { "visual reply text was empty" }
+                }
+            } else {
+                ""
+            }
+            return VisualDecision(action, reply)
         }
-        return text.take(config.maxReplyChars - 1).trimEnd() + "…"
+        val firstLine = trimmed.lineSequence().firstOrNull().orEmpty().trim()
+        val control = firstLine
+            .uppercase()
+            .trimEnd('.', ':', '：', '。', '！', '!')
+            .trim()
+        return when {
+            control == "WAIT" -> VisualDecision(ReplyDecisionAction.WAIT, "")
+            control == "SILENT" -> VisualDecision(ReplyDecisionAction.SILENT, "")
+            else -> VisualDecision(ReplyDecisionAction.REPLY, trimmed)
+        }
     }
 
     private fun elapsedMs(started: Long): Long {
@@ -241,6 +361,19 @@ class ReplyEngine(
                 "最后一条来自对方。先结合整段语境自然承接最后一句；" +
                 "如果原话题已经自然结束，就简短回应后开启一个与当前话题或长期记忆相关的新话题，" +
                 "不要生硬重复，也不要编造共同经历或屏幕中没有的事实。"
+        const val CHAT_IMAGE_NOTE =
+            "聊天记录中的" + IMAGE_PLACEHOLDER + "只是图片占位。" +
+                "只有对应图片已经作为本次输入提供给你时，才能根据画面内容作答；" +
+                "看不到图片时不要猜测或假装已经看见。"
+        const val VISUAL_BURST_DECISION_NOTE =
+            "当前用户消息附带一张当前微信聊天窗口截图。以截图中的完整可见对话、" +
+                "双方位置、消息顺序和最后几条消息理解语境。不要假装截图里没有出现过的内容。" +
+                "先决定现在是否需要接话。不要为了每句话都回复。" +
+                "如果适合现在回复，只输出自然回复正文，不要加字段或代码块。" +
+                "如果对方可能仍在连续表达、刚发出不完整的一段，或话题尚未形成完整回应点，" +
+                "第一行只输出 WAIT，不要输出其他内容。" +
+                "如果最下方是 Agent 自己发送的内容、只是无需接话的收尾，" +
+                "或继续回复会显得多余，第一行只输出 SILENT，不要输出其他内容。"
 
         internal fun timeNote(
             quietFor: Double,
@@ -264,4 +397,9 @@ class ReplyEngine(
             }
         }
     }
+
+    private data class VisualDecision(
+        val action: ReplyDecisionAction,
+        val reply: String,
+    )
 }

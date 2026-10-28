@@ -16,8 +16,13 @@ no Compose or Material dependency added.
   controls.
 - Icons are a single Lucide-style line-icon set stored as Android vectors.
 - Settings use switches for binary controls and list rows for commands.
+- Model configuration includes a default-off, model-scoped vision switch with a
+  short explanation that the selected provider receives full WeChat-window
+  screenshots.
 - Settings include one transport switch for route C. Route C is the default;
   route-B controls appear only in the separate fallback build.
+- Starting the Agent is the send authorization, so Settings does not expose an
+  auto-send switch or contact whitelist.
 
 ## Screen structure
 

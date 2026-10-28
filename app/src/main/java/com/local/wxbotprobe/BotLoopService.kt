@@ -87,7 +87,6 @@ class BotLoopService : Service() {
             log("poll tick")
             var nextDelay = POLL_INTERVAL_MS
             try {
-                drainDueBurstBeforePoll()
                 if (pollOnce()) {
                     nextDelay = OCR_RECHECK_DELAY_MS
                 }
@@ -446,18 +445,6 @@ class BotLoopService : Service() {
         }
     }
 
-    private fun drainDueBurstBeforePoll() {
-        if (!AgentRunPolicy.canPoll(runState, running)) {
-            return
-        }
-        val snapshot = pollingCoordinator.cachedSnapshot() ?: return
-        val completed = pollingCoordinator.drainDueBurst(
-            SystemClock.elapsedRealtime(),
-        ) ?: return
-        log("burst completed before OCR items=${completed.items.size}")
-        dispatchCompletedBurst(snapshot, completed)
-    }
-
     private fun pollOnce(): Boolean {
         if (!AgentRunPolicy.canPoll(runState, running)) {
             return false
@@ -667,6 +654,18 @@ class BotLoopService : Service() {
             ProbeStatus.write(this, "调试基线模式已抑制 burst。")
             return
         }
+        val screenshot = File(
+            filesDir,
+            "captures/reply-${System.currentTimeMillis()}.png",
+        )
+        val screenshotCaptured = runCatching {
+            pollingCoordinator.copyCurrentScreenshot(screenshot)
+        }.onFailure {
+            log("reply screenshot copy failed: ${it.stackTraceToString()}")
+        }.getOrDefault(false)
+        if (!screenshotCaptured) {
+            screenshot.delete()
+        }
         completed.items.forEach {
             memoryCoordinator.recordIncoming(it.text, System.currentTimeMillis())
         }
@@ -675,6 +674,7 @@ class BotLoopService : Service() {
             chatTitle = snapshot.chat.title,
             chatFingerprint = snapshot.chat.fingerprint,
             conversationKey = snapshot.chat.conversationKey,
+            screenshot = screenshot.takeIf { screenshotCaptured },
         )
         val conversationId =
             memoryCoordinator.chatId ?: snapshot.chat.conversationKey

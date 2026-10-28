@@ -5,6 +5,7 @@ import java.io.FileOutputStream
 import java.nio.file.Files
 import java.nio.file.StandardCopyOption
 import java.util.UUID
+import org.json.JSONArray
 import org.json.JSONObject
 
 enum class ReplyRetryStatus {
@@ -32,6 +33,7 @@ data class ReplyRetryTask(
     val lastError: String,
     val createdAt: Long,
     val updatedAt: Long,
+    val attachments: List<String> = emptyList(),
 ) {
     val waiting: Boolean
         get() = status == ReplyRetryStatus.PENDING
@@ -69,6 +71,7 @@ class ReplyRetryStore(
         isGroup: Boolean,
         nowMillis: Long = System.currentTimeMillis(),
         taskId: String? = null,
+        attachments: List<String> = emptyList(),
     ): ReplyRetryTask {
         require(text.isNotBlank()) { "retry text is required" }
         val resolvedId = taskId?.also {
@@ -86,6 +89,7 @@ class ReplyRetryStore(
                 text = text,
                 isGroup = isGroup,
                 updatedAt = maxOf(nowMillis, existing.updatedAt),
+                attachments = attachments,
             )
             save(refreshed)
             return refreshed
@@ -104,6 +108,7 @@ class ReplyRetryStore(
             lastError = "",
             createdAt = nowMillis,
             updatedAt = nowMillis,
+            attachments = attachments.distinct(),
         )
         save(task)
         return task
@@ -167,6 +172,12 @@ class ReplyRetryStore(
             .put("lastError", task.lastError)
             .put("createdAt", task.createdAt)
             .put("updatedAt", task.updatedAt)
+            .put(
+                "attachments",
+                JSONArray().apply {
+                    task.attachments.forEach(::put)
+                },
+            )
 
         FileOutputStream(temporary).use {
             it.write(root.toString(2).toByteArray(Charsets.UTF_8))
@@ -198,6 +209,29 @@ class ReplyRetryStore(
             .count { it.delete() }
     }
 
+    fun holdLegacyVisualProtocolFailures(
+        nowMillis: Long = System.currentTimeMillis(),
+    ): Int {
+        var held = 0
+        all()
+            .filter {
+                it.waiting &&
+                    it.lastError.contains(LEGACY_VISUAL_PROTOCOL_ERROR)
+            }
+            .forEach { task ->
+                save(
+                    task.copy(
+                        status = ReplyRetryStatus.FAILED,
+                        nextAttemptAt = 0L,
+                        lastError = LEGACY_VISUAL_REVIEW_MESSAGE,
+                        updatedAt = maxOf(nowMillis, task.updatedAt),
+                    ),
+                )
+                held++
+            }
+        return held
+    }
+
     private fun read(file: File): ReplyRetryTask? {
         if (!file.isFile) {
             return null
@@ -218,7 +252,26 @@ class ReplyRetryStore(
                 lastError = root.optString("lastError"),
                 createdAt = root.optLong("createdAt"),
                 updatedAt = root.optLong("updatedAt"),
+                attachments = root.optJSONArray("attachments")
+                    ?.let { array ->
+                        buildList {
+                            for (index in 0 until array.length()) {
+                                val value = array.optString(index)
+                                if (value.isNotBlank()) {
+                                    add(value)
+                                }
+                            }
+                        }
+                    }
+                    .orEmpty(),
             )
         }.getOrNull()
+    }
+
+    private companion object {
+        const val LEGACY_VISUAL_PROTOCOL_ERROR =
+            "visual decision was not a JSON object"
+        const val LEGACY_VISUAL_REVIEW_MESSAGE =
+            "legacy visual protocol failure; manual review required"
     }
 }

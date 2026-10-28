@@ -5,7 +5,10 @@ import android.os.SystemClock
 import com.local.wxbotprobe.chat.BitmapPixelSource
 import com.local.wxbotprobe.chat.ChatIdentity
 import com.local.wxbotprobe.chat.ChatHeaderIdentity
+import com.local.wxbotprobe.chat.IMAGE_PLACEHOLDER
 import com.local.wxbotprobe.chat.OcrRow
+import com.local.wxbotprobe.chat.ScreenImageRegion
+import com.local.wxbotprobe.chat.ScreenImageRules
 import com.local.wxbotprobe.chat.ScreenPixelRules
 import com.local.wxbotprobe.chat.ScreenReadingRules
 import com.local.wxbotprobe.chat.ScreenSnapshot
@@ -66,14 +69,59 @@ class ScreenSnapshotBuilder(
             ScreenPixelRules.inkIsMessage(pixels, it, profile)
         }
         val blocks = rules.bubbleBlocks(filtered.messages)
-            .filterNot { ScreenPixelRules.looksLikeImage(pixels, it, profile) }
-        val items = blocks.map { block ->
-            com.local.wxbotprobe.chat.ScreenItem(
-                text = block.text,
-                kind = ScreenPixelRules.bubbleKind(pixels, block),
-                y = block.rows.first().y,
-                xLeft = block.xLeft,
-            )
+        val detectedImages = ScreenImageRules.detect(pixels, profile, sendY)
+        val imageLikeBlocks = blocks
+            .filter { ScreenPixelRules.looksLikeImage(pixels, it, profile) }
+            .toSet()
+        val imageRegions = detectedImages + imageLikeBlocks
+            .mapNotNull { block ->
+                val box = ScreenPixelRules.bubbleBox(
+                    block,
+                    bitmap.width,
+                    bitmap.height,
+                    profile,
+                )
+                if (detectedImages.any { overlaps(box, it) }) {
+                    null
+                } else {
+                    ScreenImageRegion(
+                        left = box[0],
+                        top = box[1],
+                        right = box[2] + 1,
+                        bottom = box[3] + 1,
+                        kind = ScreenPixelRules.bubbleKind(pixels, block),
+                    )
+                }
+            }
+        val items = buildList {
+            blocks
+                .filterNot { it in imageLikeBlocks }
+                .forEach { block ->
+                    add(
+                        com.local.wxbotprobe.chat.ScreenItem(
+                            text = block.text,
+                            kind = ScreenPixelRules.bubbleKind(pixels, block),
+                            y = block.rows.first().y,
+                            xLeft = block.xLeft,
+                        ),
+                    )
+                }
+            imageRegions.forEach { region ->
+                val encoded = ScreenImageEncoder.encode(bitmap, region) ?: return@forEach
+                add(
+                    com.local.wxbotprobe.chat.ScreenItem(
+                        text = IMAGE_PLACEHOLDER,
+                        kind = region.kind,
+                        y = region.top,
+                        xLeft = region.left,
+                        image = encoded.bytes,
+                        imageWidth = encoded.width,
+                        imageHeight = encoded.height,
+                        imageSha256 = encoded.sha256,
+                        imageMimeType = encoded.mimeType,
+                    ),
+                )
+            }
         }.sortedBy { it.y }
         return ScreenSnapshot(
             width = bitmap.width,
@@ -127,15 +175,71 @@ class ScreenSnapshotBuilder(
             val filtered = rules.filterRows(rows, sendY) {
                 ScreenPixelRules.inkIsMessage(pixels, it, profile)
             }
+            val localContentTop = (crop.height * ScreenReadingRules.CHAT_TOP).toInt()
+            val localContentBottom = (
+                sendY?.minus((90 * profile.verticalScale).roundToInt())
+                    ?: (localInputY - (60 * profile.verticalScale).roundToInt())
+                ).coerceIn(localContentTop + 1, crop.height)
             val blocks = rules.bubbleBlocks(filtered.messages)
-                .filterNot { ScreenPixelRules.looksLikeImage(pixels, it, profile) }
-            val items = blocks.map { block ->
-                com.local.wxbotprobe.chat.ScreenItem(
-                    text = block.text,
-                    kind = ScreenPixelRules.bubbleKind(pixels, block),
-                    y = block.rows.first().y + safeTop,
-                    xLeft = block.xLeft,
-                )
+            val detectedImages = ScreenImageRules.detect(
+                pixels = pixels,
+                profile = profile,
+                sendButtonY = sendY,
+                contentTopOverride = localContentTop,
+                contentBottomOverride = localContentBottom,
+            )
+            val imageLikeBlocks = blocks
+                .filter { ScreenPixelRules.looksLikeImage(pixels, it, profile) }
+                .toSet()
+            val imageRegions = detectedImages + imageLikeBlocks
+                .mapNotNull { block ->
+                    val box = ScreenPixelRules.bubbleBox(
+                        block,
+                        crop.width,
+                        crop.height,
+                        profile,
+                    )
+                    if (detectedImages.any { overlaps(box, it) }) {
+                        null
+                    } else {
+                        ScreenImageRegion(
+                            left = box[0],
+                            top = box[1],
+                            right = box[2] + 1,
+                            bottom = box[3] + 1,
+                            kind = ScreenPixelRules.bubbleKind(pixels, block),
+                        )
+                    }
+                }
+            val items = buildList {
+                blocks
+                    .filterNot { it in imageLikeBlocks }
+                    .forEach { block ->
+                        add(
+                            com.local.wxbotprobe.chat.ScreenItem(
+                                text = block.text,
+                                kind = ScreenPixelRules.bubbleKind(pixels, block),
+                                y = block.rows.first().y + safeTop,
+                                xLeft = block.xLeft,
+                            ),
+                        )
+                    }
+                imageRegions.forEach { region ->
+                    val encoded = ScreenImageEncoder.encode(crop, region) ?: return@forEach
+                    add(
+                        com.local.wxbotprobe.chat.ScreenItem(
+                            text = IMAGE_PLACEHOLDER,
+                            kind = region.kind,
+                            y = region.top + safeTop,
+                            xLeft = region.left,
+                            image = encoded.bytes,
+                            imageWidth = encoded.width,
+                            imageHeight = encoded.height,
+                            imageSha256 = encoded.sha256,
+                            imageMimeType = encoded.mimeType,
+                        ),
+                    )
+                }
             }.sortedBy { it.y }
             val inputField = ScreenPixelRules.locateField(
                 pixels,
@@ -187,6 +291,25 @@ class ScreenSnapshotBuilder(
                 scaled.recycle()
             }
         }
+    }
+
+    private fun overlaps(
+        box: IntArray,
+        region: ScreenImageRegion,
+    ): Boolean {
+        val left = maxOf(box[0], region.left)
+        val top = maxOf(box[1], region.top)
+        val right = minOf(box[2], region.right)
+        val bottom = minOf(box[3], region.bottom)
+        if (right <= left || bottom <= top) {
+            return false
+        }
+        val overlap = (right - left).toLong() * (bottom - top)
+        val blockArea = (
+            (box[2] - box[0]).coerceAtLeast(1).toLong() *
+                (box[3] - box[1]).coerceAtLeast(1)
+            )
+        return overlap.toDouble() / blockArea >= 0.35
     }
 
 }

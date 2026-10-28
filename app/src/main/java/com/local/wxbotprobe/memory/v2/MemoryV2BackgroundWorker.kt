@@ -17,6 +17,8 @@ import java.util.concurrent.atomic.AtomicInteger
 
 interface MemoryV2BatchGenerator {
     fun generate(job: LeasedMemoryJob): String
+
+    fun maxModelCalls(job: LeasedMemoryJob): Int = 1
 }
 
 enum class MemoryV2WorkerOutcome {
@@ -121,7 +123,8 @@ class MemoryV2BackgroundWorker(
             ?: return MemoryV2WorkerOutcome.IDLE
         val leased = jobs.lease(owner, limit = 1).firstOrNull()
             ?: return MemoryV2WorkerOutcome.IDLE
-        if (!budget.tryAcquire(leased.scopeId, now())) {
+        val reservedCalls = generator.maxModelCalls(leased).coerceIn(1, 4)
+        if (!budget.tryAcquire(leased.scopeId, now(), reservedCalls)) {
             jobs.pauseUntil(
                 leased,
                 nextHourMillis() / 1_000L,
@@ -151,7 +154,7 @@ class MemoryV2BackgroundWorker(
             }
             return MemoryV2WorkerOutcome.PROGRESS
         } catch (error: ApiBudgetExceededException) {
-            budget.release(leased.scopeId, now())
+            budget.release(leased.scopeId, now(), reservedCalls)
             jobs.pauseUntil(
                 leased,
                 nextLocalDayMillis() / 1_000L,
@@ -160,7 +163,7 @@ class MemoryV2BackgroundWorker(
             return MemoryV2WorkerOutcome.PAUSED_DAILY
         } catch (error: MemoryV2Exception) {
             if (error.code == MemoryV2ErrorCode.CONTEXT_BUDGET_EXCEEDED) {
-                budget.release(leased.scopeId, now())
+                budget.release(leased.scopeId, now(), reservedCalls)
             }
             if (
                 error.code in setOf(
@@ -202,6 +205,7 @@ class MemoryV2BackgroundWorker(
             database = database,
             client = client,
             now = now,
+            enableTools = true,
         )
     }
 
@@ -342,7 +346,9 @@ class MemoryV2CallBudgetStore(
     fun tryAcquire(
         scopeId: String,
         nowEpochSeconds: Long,
+        units: Int = 1,
     ): Boolean {
+        val cost = units.coerceAtLeast(1)
         val hour = SimpleDateFormat("yyyyMMddHH", Locale.US)
             .format(Date(nowEpochSeconds * 1_000L))
         val deviceKey = "device:$hour"
@@ -352,14 +358,14 @@ class MemoryV2CallBudgetStore(
         val scopeLimit = tier.scopeLimit
         val deviceLimit = tier.deviceLimit
         if (
-            (deviceLimit != null && deviceCount >= deviceLimit) ||
-            (scopeLimit != null && scopeCount >= scopeLimit)
+            (deviceLimit != null && deviceCount + cost > deviceLimit) ||
+            (scopeLimit != null && scopeCount + cost > scopeLimit)
         ) {
             return false
         }
         preferences.edit()
-            .putInt(deviceKey, deviceCount + 1)
-            .putInt(scopeKey, scopeCount + 1)
+            .putInt(deviceKey, deviceCount + cost)
+            .putInt(scopeKey, scopeCount + cost)
             .apply()
         return true
     }
@@ -368,7 +374,9 @@ class MemoryV2CallBudgetStore(
     fun release(
         scopeId: String,
         nowEpochSeconds: Long,
+        units: Int = 1,
     ) {
+        val cost = units.coerceAtLeast(1)
         val hour = SimpleDateFormat("yyyyMMddHH", Locale.US)
             .format(Date(nowEpochSeconds * 1_000L))
         val deviceKey = "device:$hour"
@@ -376,8 +384,8 @@ class MemoryV2CallBudgetStore(
         val deviceCount = preferences.getInt(deviceKey, 0)
         val scopeCount = preferences.getInt(scopeKey, 0)
         preferences.edit()
-            .putInt(deviceKey, (deviceCount - 1).coerceAtLeast(0))
-            .putInt(scopeKey, (scopeCount - 1).coerceAtLeast(0))
+            .putInt(deviceKey, (deviceCount - cost).coerceAtLeast(0))
+            .putInt(scopeKey, (scopeCount - cost).coerceAtLeast(0))
             .apply()
     }
 

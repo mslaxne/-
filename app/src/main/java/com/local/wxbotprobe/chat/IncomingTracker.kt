@@ -35,11 +35,8 @@ class IncomingTracker(
         val fresh = mutableListOf<ScreenItem>()
         for ((identity, item) in incoming) {
             if (seenBefore(identity) &&
-                !reappearedShortText(
-                    identity = identity,
-                    item = item,
-                    previousY = lastKnownY[identity],
-                )
+                !reappearedShortText(identity, item, lastKnownY[identity]) &&
+                !reappearedImage(identity, item, lastKnownY[identity])
             ) {
                 continue
             }
@@ -67,13 +64,27 @@ class IncomingTracker(
             item.y + maxReappearUpwardShiftPx >= previousY
     }
 
+    private fun reappearedImage(
+        identity: Pair<String, Int>,
+        item: ScreenItem,
+        previousY: Int?,
+    ): Boolean {
+        return item.image != null &&
+            identity in seen &&
+            identity !in lastVisible &&
+            previousY != null &&
+            item.y + maxReappearUpwardShiftPx >= previousY
+    }
+
     private fun incomingIds(items: List<ScreenItem>): List<Pair<Pair<String, Int>, ScreenItem>> {
         val counts = mutableMapOf<String, Int>()
         return items.mapNotNull { item ->
             if (item.kind != BubbleKind.IN) {
                 return@mapNotNull null
             }
-            val key = item.image?.let { "图片:" + sha1Prefix(it) }
+            val key = item.image?.let {
+                "图片:" + item.imageSha256.ifBlank { sha1Prefix(it) }
+            }
                 ?: TextRules.normalise(item.text)
             val occurrence = (counts[key] ?: 0) + 1
             counts[key] = occurrence

@@ -25,6 +25,7 @@ object ModelClientFactory {
             maxRetries = maxRetries,
             includeThinkingFlag = configuration.provider.includesThinkingFlag,
             providerLabel = configuration.provider.label,
+            imageInputEnabled = configuration.supportsVision,
         )
         if (configuration.usesFreePricing()) {
             return client

@@ -11,6 +11,7 @@ import android.widget.TextView
 import com.local.wxbotprobe.api.ModelClientFactory
 import com.local.wxbotprobe.api.ModelSettings
 import com.local.wxbotprobe.bot.ConversationStore
+import com.local.wxbotprobe.bot.ChatImage
 import com.local.wxbotprobe.bot.EffectiveRoleplayPolicy
 import com.local.wxbotprobe.bot.IncomingMessage
 import com.local.wxbotprobe.bot.PersonaLoader
@@ -164,6 +165,12 @@ class DiagnosticsPageView(
                             "生成测试回复",
                             "调用模型但不发送",
                             onClick = ::generateTestReply,
+                        ),
+                        actionRow(
+                            R.drawable.ic_scan,
+                            "视觉识别测试",
+                            "读取当前聊天截图，调用模型但不发送",
+                            onClick = ::generateVisionTestReply,
                         ),
                         actionRow(
                             R.drawable.ic_keyboard,
@@ -508,6 +515,11 @@ class DiagnosticsPageView(
                     Locale.CHINA,
                 ).format(Date())
                 val output = File(outputDirectory, "screen-$stamp.json")
+                val visionDirectory = File(outputDirectory, "vision").apply {
+                    if (!exists() && !mkdirs()) {
+                        throw IllegalStateException("无法创建图片诊断目录")
+                    }
+                }
                 val elapsedMs = System.currentTimeMillis() - startedAt
                 val root = JSONObject()
                     .put("engine", snapshot.engine)
@@ -516,6 +528,10 @@ class DiagnosticsPageView(
                     .put("width", snapshot.width)
                     .put("height", snapshot.height)
                     .put("ocrRowCount", snapshot.ocrRowCount)
+                    .put(
+                        "imageCount",
+                        snapshot.items.count { it.image != null },
+                    )
                     .put("isGroup", snapshot.isGroup)
                     .put("chatTitle", snapshot.chat.title)
                     .put("conversationKey", snapshot.chat.conversationKey)
@@ -539,7 +555,24 @@ class DiagnosticsPageView(
                                         .put("text", item.text)
                                         .put("kind", item.kind.name.lowercase())
                                         .put("y", item.y)
-                                        .put("xLeft", item.xLeft),
+                                        .put("xLeft", item.xLeft)
+                                        .apply {
+                                            item.image?.let { bytes ->
+                                                val imageFile = File(
+                                                    visionDirectory,
+                                                    "${item.imageSha256.take(24)}.jpg",
+                                                )
+                                                if (!imageFile.isFile) {
+                                                    imageFile.writeBytes(bytes)
+                                                }
+                                                put("imageBytes", bytes.size)
+                                                put("imageFile", imageFile.absolutePath)
+                                                put("imageWidth", item.imageWidth)
+                                                put("imageHeight", item.imageHeight)
+                                                put("imageSha256", item.imageSha256)
+                                                put("imageMimeType", item.imageMimeType)
+                                            }
+                                        },
                                 )
                             }
                         },
@@ -593,8 +626,6 @@ class DiagnosticsPageView(
                     temperature = 1.0,
                     maxTokens = 500,
                     historyTurns = 0,
-                    minReplyInterval = 0.0,
-                    maxReplyChars = 200,
                     identityQuestionPolicy = persona.identityQuestionPolicy,
                     roleplayPolicyProvider = {
                         if (
@@ -655,6 +686,129 @@ class DiagnosticsPageView(
                 )
             } catch (error: Throwable) {
                 ProbeStatus.write(activity, "测试回复失败：${error.message}")
+            }
+        }.start()
+    }
+
+    private fun generateVisionTestReply() {
+        val configuration = ModelSettings.load(activity)
+        if (!configuration.supportsVision) {
+            ProbeStatus.write(
+                activity,
+                "当前模型未开启视觉输入。请先在模型配置中确认该模型支持图片。",
+            )
+            return
+        }
+        val screenshotPath = ProbeStatus.screenshotPath(activity)
+        val screenshot = screenshotPath?.let(::File)
+        if (screenshot == null || !screenshot.isFile) {
+            ProbeStatus.write(activity, "没有可解析的最新截图。")
+            return
+        }
+        val client = ModelClientFactory.create(activity)
+        if (client == null) {
+            ProbeStatus.write(activity, "请先完成模型配置。")
+            onConfigureApiKey()
+            return
+        }
+        ProbeStatus.write(activity, "正在读取当前聊天截图（不会发送）。")
+        Thread {
+            val startedAt = System.currentTimeMillis()
+            try {
+                val options = BitmapFactory.Options().apply {
+                    inJustDecodeBounds = true
+                }
+                BitmapFactory.decodeFile(screenshot.absolutePath, options)
+                if (options.outWidth <= 0 || options.outHeight <= 0) {
+                    throw IllegalStateException("截图解码失败")
+                }
+                val screenshotImage = ChatImage(
+                    bytes = screenshot.readBytes(),
+                    width = options.outWidth,
+                    height = options.outHeight,
+                    mimeType = "image/png",
+                )
+                val persona = PersonaLoader(activity).load()
+                val config = ReplyConfig(
+                    systemPrompt = PersonaText.systemPrompt(persona),
+                    personaMessages = PersonaText.turns(persona.examples),
+                    temperature = 1.0,
+                    maxTokens = 500,
+                    historyTurns = 0,
+                    imageInputEnabled = configuration.supportsVision,
+                    identityQuestionPolicy = persona.identityQuestionPolicy,
+                    roleplayPolicyProvider = {
+                        if (
+                            persona.identityMode ==
+                            PersonaIdentityMode.IMMERSIVE_COMPANION
+                        ) {
+                            EffectiveRoleplayPolicy.TRANSPARENT
+                        } else {
+                            EffectiveRoleplayPolicy.NOT_APPLICABLE
+                        }
+                    },
+                )
+                val engine = ReplyEngine(
+                    config,
+                    client,
+                    ConversationStore(config.historyTurns),
+                )
+                val result = engine.handleVisualBurst(
+                    message = IncomingMessage(
+                        id = "vision-probe-${System.currentTimeMillis()}",
+                        text = "请根据当前微信聊天窗口截图判断是否回复。",
+                        images = listOf(screenshotImage),
+                    ),
+                    conversationId = "vision-diagnostics",
+                    commitReply = false,
+                )
+                if (
+                    result.decisionAction == null ||
+                    result.error.isNotBlank()
+                ) {
+                    val reason = result.error.ifBlank {
+                        result.skippedReason.ifBlank { "未知原因" }
+                    }
+                    ProbeStatus.write(activity, "视觉识别测试失败：$reason")
+                    return@Thread
+                }
+                val directory = File(
+                    activity.getExternalFilesDir(null) ?: activity.filesDir,
+                    "replies",
+                )
+                if (!directory.exists() && !directory.mkdirs()) {
+                    throw IllegalStateException("无法创建回复目录")
+                }
+                val stamp = SimpleDateFormat(
+                    "yyyyMMdd-HHmmss-SSS",
+                    Locale.CHINA,
+                ).format(Date())
+                val output = File(directory, "vision-probe-$stamp.json")
+                val root = JSONObject()
+                    .put("text", result.text)
+                    .put("model", result.model)
+                    .put("provider", configuration.provider.label)
+                    .put("imageCount", 1)
+                    .put(
+                        "decisionAction",
+                        result.decisionAction?.name?.lowercase().orEmpty(),
+                    )
+                    .put("latencyMs", result.latencyMs)
+                    .put("elapsedMs", System.currentTimeMillis() - startedAt)
+                    .put("sent", false)
+                FileOutputStream(output).use {
+                    it.write(root.toString(2).toByteArray(Charsets.UTF_8))
+                }
+                ProbeStatus.write(
+                    activity,
+                    "视觉测试完成：${result.decisionAction?.name?.lowercase()}，" +
+                        "未发送：${output.absolutePath}",
+                )
+            } catch (error: Throwable) {
+                ProbeStatus.write(
+                    activity,
+                    "视觉识别测试失败：${error.message}",
+                )
             }
         }.start()
     }

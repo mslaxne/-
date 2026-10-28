@@ -13,6 +13,7 @@ class MemoryV2DeepSeekBatchGenerator(
     private val database: MemoryV2Database,
     private val client: ChatClient,
     private val now: () -> Long = { System.currentTimeMillis() / 1_000L },
+    private val enableTools: Boolean = false,
 ) : MemoryV2BatchGenerator {
     private val config = MemoryV2ConfigLoader.load(context)
     private val profile = MemoryV2ConfigLoader.loadModelProfile(
@@ -27,6 +28,14 @@ class MemoryV2DeepSeekBatchGenerator(
         database,
         now,
     )
+
+    override fun maxModelCalls(job: LeasedMemoryJob): Int {
+        return if (enableTools && job.kind == "extract") {
+            MemoryV2AgentProtocol.MAX_READ_TOOL_CALLS + 1
+        } else {
+            1
+        }
+    }
 
     override fun generate(job: LeasedMemoryJob): String {
         val promptAsset = if (job.kind == "summary") {
@@ -48,6 +57,77 @@ class MemoryV2DeepSeekBatchGenerator(
         } else {
             MemoryV2BatchOutputPolicy.extractionMaxTokens(profile.outputMaxTokens)
         }
+        return if (enableTools && job.kind == "extract") {
+            generateWithAgent(job, system, input, maxTokens)
+        } else {
+            callWithBudget(messages, maxTokens)
+        }
+    }
+
+    private fun generateWithAgent(
+        job: LeasedMemoryJob,
+        baseSystem: String,
+        input: JSONObject,
+        finalMaxTokens: Int,
+    ): String {
+        val executor = MemoryV2AgentToolExecutor(context, database, now)
+        val messages = mutableListOf(
+            ChatMessage(
+                role = "system",
+                content = baseSystem + "\n\n" + MemoryV2AgentProtocol.instructions,
+            ),
+            ChatMessage(
+                role = "user",
+                content = JSONObject(input.toString())
+                    .put(
+                        "agent_database_catalog",
+                        MemoryV2AgentProtocol.databaseCatalog,
+                    )
+                    .toString(),
+            ),
+        )
+        var toolCalls = 0
+        while (true) {
+            val raw = callWithBudget(
+                messages = messages,
+                maxTokens = finalMaxTokens,
+            )
+            when (val turn = MemoryV2AgentProtocol.parse(raw)) {
+                is MemoryV2AgentTurn.FinalBatch -> return turn.json
+                is MemoryV2AgentTurn.Invalid -> return raw
+                is MemoryV2AgentTurn.ToolCall -> {
+                    if (toolCalls >= MemoryV2AgentProtocol.MAX_READ_TOOL_CALLS) {
+                        messages += ChatMessage("assistant", raw)
+                        messages += ChatMessage(
+                            "user",
+                            MemoryV2AgentProtocol.FINAL_INSTRUCTION,
+                        )
+                        return callWithBudget(messages, finalMaxTokens)
+                    }
+                    val result = executor.execute(
+                        scopeId = job.scopeId,
+                        sessionId = job.sessionId,
+                        call = turn,
+                    )
+                    toolCalls++
+                    messages += ChatMessage("assistant", raw)
+                    messages += ChatMessage(
+                        role = "user",
+                        content = JSONObject()
+                            .put("memory_tool_result", turn.name)
+                            .put("data_only", true)
+                            .put("result", result)
+                            .toString(),
+                    )
+                }
+            }
+        }
+    }
+
+    private fun callWithBudget(
+        messages: List<ChatMessage>,
+        maxTokens: Int,
+    ): String {
         MemoryV2TokenBudgetPolicy.estimate(
             request = TokenBudgetRequest(
                 model = profile.model,
@@ -313,4 +393,5 @@ class MemoryV2DeepSeekBatchGenerator(
     private fun Cursor.string(column: String): String {
         return getString(getColumnIndexOrThrow(column)).orEmpty()
     }
+
 }

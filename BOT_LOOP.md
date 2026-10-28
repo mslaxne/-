@@ -13,22 +13,43 @@
 - Waits three seconds after launch so the user can return to WeChat.
 - First successful frame becomes the baseline; history is not treated as new.
 - After an explicit start or resume, the first stable baseline is evaluated as a
-  startup conversation. Visible `IN`/`OUT` bubbles are merged with persisted
-  current-session history, with the visible tail authoritative and overlap
-  deduplicated.
+  startup conversation. All visible `IN`/`OUT` bubbles are passed in screen
+  order as a structured transcript; `UNKNOWN` bubbles are omitted.
 - Startup evaluation triggers only when the bottom visible message is a readable
   incoming message. Outgoing or unknown-role bottom messages do not trigger a
   proactive reply.
+- Startup history merges persisted current-session messages with the visible
+  transcript. The visible tail is authoritative, overlap is deduplicated and
+  older screen-only messages remain in order.
 - Resume resets the polling baseline before startup evaluation so messages
   received while paused cannot also become a later duplicate burst reply.
+- Each explicit start or resume binds the first stable recognized private chat
+  as the only automatic-send target. There is no separate auto-send switch or
+  contact whitelist. A chat switch, group or unknown chat pauses the Agent and
+  preserves sessions and queues.
 - Polls every three seconds through the selected `DeviceTransport` screenshot,
   RapidOCR and pixel rules.
 - Runs OCR on every captured frame. Frame fingerprints remain diagnostic input,
   but small message bubbles are not trusted to cross a whole-screen diff
   threshold.
+- Detects large image-message regions without requiring OCR text, so image-only
+  incoming messages can still enter the freshness tracker. Region detection is
+  not the burst reply payload.
 - New incoming bubbles enter `IncomingTracker`.
-- A three-second quiet window merges a burst of messages.
+- A four-second quiet window merges a burst of messages, with a 12-second
+  maximum collection age.
 - Completed bursts are written to `Android/data/.../files/inbox/`.
+- When vision is enabled, burst completion copies the latest full WeChat-window
+  screenshot once, persists it with the generation task and sends that image as
+  the primary reply context. Retries and process recovery reuse the persisted
+  screenshot rather than taking another one.
+- A normal visual-model response is treated as reply text. An exact first
+  control line of `WAIT` records no reply and waits for a future
+  message-triggered burst; `SILENT` records no reply. JSON action objects from
+  older prompts remain accepted. Recovery does not resubmit the same screenshot
+  after a terminal wait or silent decision.
+- If vision is disabled or screenshot persistence fails, the older text and
+  image-region context path remains available.
 - Poll events are logged to `Android/data/.../files/logs/bot-loop.log`.
 - A completed burst is sent through the model and, when enabled, through the
   persistent delivery queue.

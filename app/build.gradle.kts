@@ -11,8 +11,8 @@ android {
         applicationId = "com.local.wxbotprobe"
         minSdk = 33
         targetSdk = 35
-        versionCode = 154
-        versionName = "1.0.130"
+        versionCode = 155
+        versionName = "1.0.131"
         ndk {
             abiFilters += "arm64-v8a"
         }

@@ -1,6 +1,6 @@
 # Memory 2.0 Android integration checkpoint
 
-Date: 2026-10-23
+Date: 2026-10-28
 
 ## Source
 
@@ -19,10 +19,8 @@ Memory 2.0 is the **only production memory path**. Production no longer
 constructs `ChatMemoryStore` or `AgentMemoryManager`; legacy classes remain
 isolated historical tooling and are not referenced by the app UI or coordinator.
 
-Build: `1.0.73` (versionCode `97`) is installed on OnePlus; both Route
-C/B Release artifacts are staged. The debug-only Android SQLite self-test
-passed after excluding Android's system `android_metadata` table from the
-contract-table check.
+Current public candidate: `1.0.131` (versionCode `155`). Route C and Route B
+share the same Memory V2 implementation described here.
 
 Implemented Android foundation:
 
@@ -50,8 +48,13 @@ Implemented Android foundation:
   completion;
 - scoped retrieval assembles A0/A1/A2 context with query matching and captured
   deletion epoch without reinforcing evidence.
-- startup reply context merges persisted session history with the visible screen
-  transcript but does not bulk-import old visible messages into memory;
+- startup reply context merges persisted session history with the ordered visible
+  screen transcript but does not bulk-import old visible messages into memory;
+- a completed burst may be supplied to a vision-capable reply model as one
+  short-lived full-window screenshot. The screenshot and model-generated visual
+  descriptions are not written to Memory V2 evidence. OCR continues to persist
+  text messages and the `[[图片]]` placeholder for image-only items, so Memory
+  extraction cannot infer unseen image content from the reply screenshot;
 - the triggering incoming message uses a deterministic client message ID derived
   from the startup snapshot so retries and process restarts are idempotent;
 - pending conflicts are supplied as context only. The reply path does not
@@ -63,9 +66,22 @@ Implemented Android foundation:
 - extraction context includes all active A0/A1, query-matched A0/A2, the previous
   A3 summary and up to 16 recent extracted sources. A3 and recent sources are
   reference-only and cannot be cited as evidence.
+- production extraction exposes only scoped read tools to the Memory Agent:
+  search/list active memories, read recent session messages and list pending
+  conflicts. It then submits a complete ExtractionBatch through
+  `memory.commit_batch` or outputs the batch directly. Raw SQL, arbitrary scope
+  IDs, hard deletes and cross-contact reads are not exposed.
+- one Memory Agent extraction job reserves at most four model calls in the hourly
+  budget: three read-only tool calls and one final submission. Summary jobs remain
+  single-call and do not receive database tools.
 - the model returns a phase checkpoint. `closed=false` consumes no source;
   `closed=true` consumes only the earliest contiguous closed prefix and leaves
   the trailing sources pending for a later evaluation.
+- layered reply-context rendering labels event time separately from memory update
+  time. A0/A1 use temporal metadata when available and otherwise expose the
+  original source-message time; A3 items include the time range of their covered
+  sources. The context supplies absolute time plus current system time, leaving
+  relative-age interpretation to the LLM.
 - production-shaped background worker now adds persistent per-scope/device hourly
   call budgets, job leasing, retry/failure handling and a DeepSeek batch
   generator that uses the vendored prompts/model profile/token budget.
@@ -77,7 +93,7 @@ Implemented Android foundation:
 - the production Memory page reads v2 contacts, raw message counts, long-term
   memories and commitments directly; migration and rollback controls have been
   removed.
-- Route C and Route B each pass 455 JVM tests; both Lint reports are clean.
+- Route C and Route B each pass 491 JVM tests; both Lint reports are clean.
 - On-device debug self-test passed: 19 contract tables, foreign keys enabled,
   scope creation, message sequence 1, duplicate client message `unchanged`,
   explicit save version 1, pin version 2, three operation receipts, forget
@@ -133,15 +149,12 @@ Implemented Android foundation:
 
 Still required before sustained v2 operation:
 
-- natural-language explicit command parser (repository command API exists);
-- production scheduler activation, reply-model-boundary integration and real
-  DeepSeek/tokenizer calibration;
 - deletion barriers, history/dependency cleanup and source editing;
 - external-index processor integration when an index is introduced;
 - coordinator-owned live-chat process-kill recovery, plus reboot,
   storage-pressure and backup-restore fencing;
-- Android SQLite migration tests, phone lifecycle/performance tests and real
-  DeepSeek quality evaluation.
+- Android SQLite migration tests, phone lifecycle/performance tests and broader
+  real-model memory quality evaluation.
 
 ## Existing call chain mapping
 

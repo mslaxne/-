@@ -63,6 +63,17 @@ class ModelConfigDialog(
             configuration.model.ifBlank { "未设置" },
             onClick = ::showEndpointEditor,
         )
+        val visionRow = MainUiComponents.switchRow(
+            context = activity,
+            iconResource = R.drawable.ic_scan,
+            title = "视觉输入",
+            checked = configuration.supportsVision,
+            onText = "当前模型接收聊天窗口截图",
+            offText = "关闭 · 回复使用文字上下文",
+        ) { enabled ->
+            ModelSettings.setVisionInputEnabled(activity, enabled)
+            onChanged()
+        }
         val keyRow = MainUiComponents.actionRow(
             activity,
             R.drawable.ic_key,
@@ -96,6 +107,7 @@ class ModelConfigDialog(
                     providerRow.view,
                     baseUrlRow.view,
                     modelRow.view,
+                    visionRow.view,
                     keyRow.view,
                     testRow.view,
                 ),
