@@ -247,7 +247,6 @@ class HomePageView(
         val botImeEnabled = ImeStrategyFactory.isBotImeEnabled(context)
         val botImeDefault = ImeStrategyFactory.isBotImeDefault(context)
         val apiKey = if (ModelSettings.isConfigured(context)) "已配置" else "未配置"
-        val autoSend = if (SendSettings.autoSend(context)) "已开启" else "已关闭"
         refreshBubbleSwitch()
         val bubble = when {
             !BubbleSettings.enabled(context) -> "已关闭"
@@ -271,10 +270,6 @@ class HomePageView(
         val sentToday = autoSendUsage.sentToday()
         val spentToday = apiUsage.spentToday()
         val memory = MemoryV2AdminStore(context).overview()
-        val whitelistCount = WhitelistContacts.reconcile(
-            context,
-            memory.contacts.mapTo(mutableSetOf()) { it.identityKey },
-        ).size
         val messageLimit = SendSettings.dailyMessageLimit(context)
         val costLimit = SendSettings.dailyCostLimitUsd(context)
         val messageLimitText = if (
@@ -326,12 +321,12 @@ class HomePageView(
                 appendLine("硬需求与可靠性建议均已就绪")
             }
             appendLine("${mode.label} · 输入法$ime")
-            appendLine("气泡$bubble · 自动发送$autoSend · 待发送 $queuedDeliveries")
+            appendLine("气泡$bubble · 启动即授权当前私聊 · 待发送 $queuedDeliveries")
             if (reviewDeliveries > 0) {
                 appendLine("发送结果需人工确认 $reviewDeliveries")
             }
             append(
-                "白名单 $whitelistCount · 今日 $sentToday/" +
+                "今日 $sentToday/" +
                     "$messageLimitText · API " +
                     String.format(Locale.CHINA, "\$%.2f", spentToday) +
                     "/$costLimitText",

@@ -20,8 +20,8 @@ import com.local.wxbotprobe.device.DeviceIdentityResolver
 import com.local.wxbotprobe.device.DeviceProfileMode
 import com.local.wxbotprobe.device.DeviceProfileResolver
 import com.local.wxbotprobe.device.ScreenCalibrationAnalyzer
-import com.local.wxbotprobe.memory.v2.MemoryV2AdminStore
 import com.local.wxbotprobe.memory.v2.MemoryBudgetSettings
+import com.local.wxbotprobe.memory.v2.MemoryV2BackgroundWorker
 import com.local.wxbotprobe.memory.v2.MemoryCleanupSettings
 import com.local.wxbotprobe.memory.v2.MemoryHourlyBudgetTier
 import com.local.wxbotprobe.memory.v2.MemoryMessageBodyRetention
@@ -45,10 +45,8 @@ class SettingsPageView(
     val view: LinearLayout
 
     private lateinit var transportSwitch: Switch
-    private lateinit var autoSendSwitchDetail: TextView
     private lateinit var transportSwitchDetail: TextView
     private lateinit var modelConfigDetail: TextView
-    private lateinit var whitelistDetail: TextView
     private lateinit var messageLimitDetail: TextView
     private lateinit var memoryBudgetDetail: TextView
     private lateinit var replyContextDetail: TextView
@@ -86,21 +84,6 @@ class SettingsPageView(
                     MainUiComponents.topPadding(this, activity, 22)
                 },
             )
-            val autoSendRow = MainUiComponents.switchRow(
-                activity,
-                R.drawable.ic_send,
-                "自动发送",
-                SendSettings.autoSend(activity),
-            ) { checked ->
-                SendSettings.setAutoSend(activity, checked)
-                ProbeStatus.write(
-                    activity,
-                    if (checked) "自动发送已开启。" else "自动发送已关闭。",
-                )
-                refresh()
-            }
-            autoSendSwitchDetail = autoSendRow.detail
-
             val transportRow = MainUiComponents.switchRow(
                 activity,
                 R.drawable.ic_activity,
@@ -116,7 +99,6 @@ class SettingsPageView(
                 MainUiComponents.groupViews(
                     activity,
                     listOf(
-                        autoSendRow.view,
                         transportRow.view,
                     ),
                 ),
@@ -128,14 +110,6 @@ class SettingsPageView(
                     MainUiComponents.topPadding(this, activity, 22)
                 },
             )
-            val whitelistRow = MainUiComponents.actionRow(
-                activity,
-                R.drawable.ic_person,
-                "联系人白名单",
-                "",
-                onClick = ::showWhitelistDialog,
-            )
-            whitelistDetail = whitelistRow.detail
             val messageLimitRow = MainUiComponents.actionRow(
                 activity,
                 R.drawable.ic_send,
@@ -188,7 +162,6 @@ class SettingsPageView(
                 MainUiComponents.groupViews(
                     activity,
                     listOf(
-                        whitelistRow.view,
                         messageLimitRow.view,
                         memoryBudgetRow.view,
                         replyContextRow.view,
@@ -365,8 +338,6 @@ class SettingsPageView(
         if (!::transportSwitch.isInitialized) {
             return
         }
-        val whitelistCount = WhitelistContacts.current(activity).size
-
         if (::personaDetail.isInitialized) {
             val persona = PersonaProfileStore(activity).load()
             val identity = when (persona.identityMode) {
@@ -387,28 +358,6 @@ class SettingsPageView(
             }
         }
 
-        if (::autoSendSwitchDetail.isInitialized) {
-            val enabled = SendSettings.autoSend(activity)
-            autoSendSwitchDetail.text = when {
-                !enabled -> "已关闭"
-                whitelistCount == 0 -> "已开启 · 白名单未设置，不会发送"
-                else -> String.format(
-                    Locale.CHINA,
-                    "已开启 · %d 个联系人 · 发送期间请勿切换聊天",
-                    whitelistCount,
-                )
-            }
-            autoSendSwitchDetail.setTextColor(
-                if (enabled) AppUi.danger else AppUi.textSecondary,
-            )
-        }
-        if (::whitelistDetail.isInitialized) {
-            whitelistDetail.text = if (whitelistCount == 0) {
-                "未设置，自动发送全部拦截"
-            } else {
-                "$whitelistCount 个联系人已允许"
-            }
-        }
         if (::messageLimitDetail.isInitialized) {
             val limit = SendSettings.dailyMessageLimit(activity)
             messageLimitDetail.text = if (
@@ -698,43 +647,6 @@ class SettingsPageView(
         }.show()
     }
 
-    private fun showWhitelistDialog() {
-        val entries = MemoryV2AdminStore(activity).contacts()
-        if (entries.isEmpty()) {
-            ProbeStatus.write(activity, "还没有联系人记忆，暂时无法设置自动发送白名单。")
-            return
-        }
-        val current = WhitelistContacts.reconcile(
-            activity,
-            entries.mapTo(mutableSetOf()) { it.identityKey },
-        )
-        val labels = entries.map { it.displayName }.toTypedArray()
-        val checked = BooleanArray(entries.size) { entries[it].identityKey in current }
-        MainUiComponents.dialogBuilder(activity)
-            .setTitle("自动发送联系人白名单")
-            .setMultiChoiceItems(labels, checked) { _, which, value ->
-                checked[which] = value
-            }
-            .setPositiveButton("保存") { _, _ ->
-                val selected = entries.indices
-                    .filter { checked[it] }
-                    .map { entries[it].identityKey }
-                    .toSet()
-                SendSettings.setWhitelist(activity, selected)
-                ProbeStatus.write(
-                    activity,
-                    if (selected.isEmpty()) {
-                        "自动发送白名单为空，所有自动发送将被拦截。"
-                    } else {
-                        "自动发送白名单已设为 ${selected.size} 个联系人。"
-                    },
-                )
-                refresh()
-            }
-            .setNegativeButton("取消", null)
-            .show()
-    }
-
     private fun showMessageLimitDialog() {
         val options = SendSettings.MESSAGE_LIMIT_OPTIONS
         val labels = options.map {
@@ -890,6 +802,7 @@ class SettingsPageView(
 
     private fun applyMemoryBudgetTier(tier: MemoryHourlyBudgetTier) {
         MemoryBudgetSettings.setHourlyTier(activity, tier)
+        MemoryV2BackgroundWorker.restart(activity)
         ProbeStatus.write(
             activity,
             if (tier == MemoryHourlyBudgetTier.UNLIMITED) {
@@ -1106,7 +1019,7 @@ class SettingsPageView(
                 "7. 在“模型配置”中绑定服务商、模型和密钥。\n" +
                 "8. 打开微信文字输入聊天，确认默认输入法仍是 BotIme。\n" +
                 "9. 先运行测试回复和 dry-run；路线 C 不需要 Shizuku。\n" +
-                "10. 自动发送保持关闭，完成稳定性验证后再单独开启。\n\n" +
+                "10. 在目标私聊中启动代理即可授权自动发送；切换聊天会自动暂停。\n\n" +
                 "硬需求：通知、无障碍、设备传输、BotIme 启用与默认、模型配置。\n" +
                 "可靠性建议：电池白名单、设备精确适配。缺失时警告但不阻断启动。"
         } else {
@@ -1118,7 +1031,7 @@ class SettingsPageView(
                 "6. 启用自建输入法；发送器会在测试后切回原输入法。\n" +
                 "7. 打开 Shizuku，点“连接 / 授权 Shizuku”，选择始终允许。\n" +
                 "8. 在“模型配置”中绑定服务商、模型和密钥。\n" +
-                "9. 先跑测试回复和 dry-run，再考虑开启自动发送。\n\n" +
+                "9. 先跑测试回复和 dry-run，再在目标私聊中启动代理。\n\n" +
                 "硬需求：通知、无障碍、设备传输、输入法、模型配置。\n" +
                 "可靠性建议：电池白名单、设备精确适配。缺失时警告但不阻断启动。\n\n" +
                 "APK 更新后若 Shizuku 一直停在“正在连接”，去 Shizuku 的应用管理里" +

@@ -852,9 +852,7 @@ class MemoryV2ReplyContextSnapshotBuilder(
                             conflictId = cursor.getString(0).orEmpty(),
                             memoryId = cursor.getString(1).orEmpty(),
                             existingTier = cursor.getString(5).orEmpty(),
-                            existingText = MemoryV2MemoryWording.forCurrentPersona(
-                                cursor.getString(6).orEmpty(),
-                            ),
+                            existingText = cursor.getString(6).orEmpty(),
                             candidateText = candidate.optString("text"),
                             candidateValue = decodeJsonStringValue(
                                 candidate.optString("value_json"),
@@ -939,9 +937,7 @@ class MemoryV2ReplyContextSnapshotBuilder(
                             version = cursor.getInt(1),
                             tier = cursor.getString(2).orEmpty(),
                             predicate = cursor.getString(3).orEmpty(),
-                            text = MemoryV2MemoryWording.forCurrentPersona(
-                                cursor.getString(4).orEmpty(),
-                            ),
+                            text = cursor.getString(4).orEmpty(),
                             epistemic = cursor.getString(5).orEmpty(),
                             commitmentState = if (cursor.isNull(6)) {
                                 ""

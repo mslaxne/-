@@ -24,6 +24,7 @@ object MemoryV2SummaryOutputContract {
                 JSONArray(
                     listOf(
                         "candidate_id",
+                        "tier",
                         "subject_id",
                         "viewpoint_id",
                         "predicate",
@@ -63,7 +64,9 @@ object MemoryV2SummaryOutputContract {
                         "Use value, never object_value.",
                         "The envelope object must contain only job_id and exactly " +
                             "match the frozen job_id.",
-                        "Do not output kind, tier, pinned or permission fields.",
+                        "Do not output kind, pinned or permission fields.",
+                        "A3 is the rolling session working_summary. " +
+                            "Each recent event candidate must use tier A2.",
                         "Every working_summary section must be an array.",
                         "temporal must contain occurred_at, local_date, timezone, " +
                             "precision and original.",
@@ -75,6 +78,7 @@ object MemoryV2SummaryOutputContract {
                         "commitment_state must be null or one of proposed, active, " +
                             "overdue_unknown, completed, cancelled.",
                         "importance_hint must be a number from 0 to 1.",
+                        "tier is required on events and must be A2.",
                     ),
                 ),
             )

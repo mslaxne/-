@@ -35,7 +35,6 @@ class ReplyGenerationCoordinator(
     private val context: Context,
     private val sendQueue: SendQueueCoordinator,
     private val canAutoSend: () -> Boolean,
-    private val autoSendEnabled: () -> Boolean,
     private val onStatus: (String) -> Unit,
     private val onNotification: (String) -> Unit,
     private val onLog: (String) -> Unit,
@@ -835,8 +834,7 @@ class ReplyGenerationCoordinator(
             onNotification("回复已保存，代理当前不发送")
             return
         }
-        val autoSend = autoSendEnabled()
-        if (autoSend && chatFingerprint != 0L) {
+        if (chatFingerprint != 0L) {
             sendQueue.enqueue(
                 replyFile = replyFile,
                 replyText = stored.text,
@@ -845,7 +843,7 @@ class ReplyGenerationCoordinator(
                 chatTitle = chatTitle,
                 deliveryId = generationId,
             )
-        } else if (autoSend) {
+        } else {
             onStatus("聊天标题不可识别，已拒绝自动发送。")
             onNotification("聊天标题不可识别，已拒绝自动发送")
             onLog(

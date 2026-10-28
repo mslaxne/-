@@ -162,6 +162,11 @@
             "extract-2.0.4",
             "extract-2.0.5",
             "extract-2.0.6",
+            "extract-2.2.0",
+            "extract-2.3.0",
+            "extract-2.4.0",
+            "extract-2.5.0",
+            "extract-2.5.1",
             "summary-2.0.3"
           ]
         },
@@ -328,6 +333,13 @@
           "minLength": 1,
           "maxLength": 8192
         },
+        "tier": {
+          "enum": [
+            "A0",
+            "A1",
+            "A2"
+          ]
+        },
         "value": {},
         "epistemic": {
           "enum": [
@@ -409,6 +421,7 @@
         "viewpoint_id",
         "predicate",
         "text",
+        "tier",
         "value",
         "epistemic",
         "reason",
@@ -504,9 +517,12 @@
             "minLength": 1,
             "maxLength": 128
           },
-          "minItems": 1,
+          "minItems": 0,
           "maxItems": 32,
           "uniqueItems": true
+        },
+        "phase": {
+          "$ref": "#/$defs/PhaseCheckpoint"
         },
         "candidates": {
           "type": "array",
@@ -521,7 +537,39 @@
         "contract",
         "envelope",
         "processed_message_ids",
+        "phase",
         "candidates"
+      ],
+      "additionalProperties": false
+    },
+    "PhaseCheckpoint": {
+      "type": "object",
+      "properties": {
+        "closed": {
+          "type": "boolean"
+        },
+        "closed_through_message_id": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        }
+      },
+      "required": [
+        "closed",
+        "closed_through_message_id",
+        "reason"
       ],
       "additionalProperties": false
     },

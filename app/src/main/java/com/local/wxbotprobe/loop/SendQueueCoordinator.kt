@@ -2,7 +2,6 @@ package com.local.wxbotprobe.loop
 
 import android.content.Context
 import com.local.wxbotprobe.SendSettings
-import com.local.wxbotprobe.WhitelistContacts
 import com.local.wxbotprobe.api.ApiUsageStore
 import com.local.wxbotprobe.chat.ReplySplitter
 import com.local.wxbotprobe.chat.ScreenPoint
@@ -30,6 +29,7 @@ class SendQueueCoordinator(
     private val deviceActions: DeviceActionGate,
     private val outgoingConfirmation: OutgoingConfirmationTracker,
     private val canAutoSend: () -> Boolean,
+    private val isSendAuthorized: (Long, String) -> Boolean,
     private val onDeliveredReply: (conversationId: String, text: String, nowMillis: Long) -> Unit,
     private val onStatus: (String) -> Unit,
     private val onNotification: (String) -> Unit,
@@ -152,11 +152,11 @@ class SendQueueCoordinator(
         if (inputFieldHint != null) {
             lastInputFieldHint = inputFieldHint
         }
-        if (!SendSettings.autoSend(context)) {
-            lastBlockReason = null
-            return
-        }
-        if (!canAutoSend() || chatFingerprint == 0L) {
+        if (
+            !canAutoSend() ||
+            chatFingerprint == 0L ||
+            !isSendAuthorized(chatFingerprint, chatTitle)
+        ) {
             return
         }
         repeat(MAX_DELIVERIES_PER_POLL) {
@@ -342,7 +342,6 @@ class SendQueueCoordinator(
         return AutoSendPolicy.check(
             AutoSendPolicyInput(
                 chatTitle = TextRules.normalise(chatTitle),
-                whitelist = WhitelistContacts.current(context),
                 sentToday = sendUsage.sentToday(),
                 remainingParts = remainingParts,
                 spentUsdToday = apiUsage.spentToday(),

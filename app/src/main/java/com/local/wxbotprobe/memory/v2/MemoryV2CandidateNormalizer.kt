@@ -4,8 +4,17 @@ import java.time.LocalDate
 import org.json.JSONObject
 
 object MemoryV2CandidateNormalizer {
-    fun epistemic(value: String): String? {
-        return when (value.lowercase()) {
+    fun epistemic(
+        value: String,
+        allowSynonyms: Boolean = true,
+    ): String? {
+        val normalized = value.lowercase()
+        if (!allowSynonyms) {
+            return normalized.takeIf {
+                it in setOf("declared", "observed", "inferred")
+            }
+        }
+        return when (normalized) {
             "declared", "asserted", "certain", "confirmed", "stated" -> "declared"
             "observed", "seen" -> "observed"
             "inferred", "uncertain", "possible", "speculative" -> "inferred"
@@ -13,15 +22,22 @@ object MemoryV2CandidateNormalizer {
         }
     }
 
-    fun importance(value: Any?): Double {
+    fun importance(
+        value: Any?,
+        allowLabelSynonyms: Boolean = true,
+    ): Double {
         val parsed = when (value) {
             is Number -> value.toDouble()
             is String -> {
-                when (value.lowercase()) {
-                    "high" -> 0.8
-                    "medium" -> 0.5
-                    "low" -> 0.2
-                    else -> value.toDoubleOrNull()
+                if (allowLabelSynonyms) {
+                    when (value.lowercase()) {
+                        "high" -> 0.8
+                        "medium" -> 0.5
+                        "low" -> 0.2
+                        else -> value.toDoubleOrNull()
+                    }
+                } else {
+                    value.toDoubleOrNull()
                 }
             }
             else -> null

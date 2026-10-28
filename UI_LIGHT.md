@@ -25,7 +25,8 @@ no Compose or Material dependency added.
   result, then compact entries for memory and settings.
 - Settings: grouped control switches, runtime permissions and advanced tools.
 - Memory: four inline metrics, contact rows with individual management buttons,
-  per-contact retention/deletion and a separate global destructive action.
+  separate pending A0 and conflict review sections, per-contact
+  retention/deletion and a separate global destructive action.
 - Diagnostics: grouped capture/OCR and input/send commands plus a screenshot
   preview.
 - Dialogs: shared light theme, rounded window, consistent accent colours and

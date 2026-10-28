@@ -5,7 +5,9 @@
 Android 13 side-load prototype for the WeChat handoff project. It reads the
 screen, generates replies with DeepSeek, and can deliver them through the
 custom input method. Device actions support both the existing Shizuku transport
-and a first-stage route-C Accessibility transport. Auto-send is off by default.
+and a first-stage route-C Accessibility transport. Nothing is sent while the
+Agent is stopped. Starting or resuming authorizes only the recognized private
+chat that is currently open.
 
 > This is a public source repository, not an official Tencent or WeChat product.
 > APK files are not committed to source control; test builds may be distributed
@@ -16,7 +18,7 @@ and a first-stage route-C Accessibility transport. Auto-send is off by default.
 
 ## Test APK
 
-- [Download the 1.0.129 Route C test build](https://github.com/mslaxne/handora-android-public/releases/tag/v1.0.129-test.1)
+- [Download the 1.0.130 Route C test build](https://github.com/mslaxne/handora-android-public/releases/tag/v1.0.130-test.1)
 - The APK is signed with an Android development/debug certificate. It is a
   feedback build, not a stable production release.
 - Include the device model, Android version, WeChat version, app version, and
@@ -63,8 +65,9 @@ and a first-stage route-C Accessibility transport. Auto-send is off by default.
   require manual review.
 - Persistent reply-generation retries for model errors, with five bounded
   attempts, 5/10/20/40-second backoff and a visible Home queue count.
-- Auto-send hard limits: normalized contact whitelist, daily sent-bubble cap,
-  daily API-cost cap based on actual token usage, and configurable quiet hours.
+- Auto-send is bound to the current recognized private chat at start/resume and
+  is limited by the daily sent-bubble cap, the daily API-cost cap based on
+  actual token usage, and configurable quiet hours.
 - Reply splitting, custom-IME writing and Shizuku send-tap confirmation.
 - The measured fast-send point is limited to an exact screen/density/WeChat
   version profile. Unknown profiles detect the green button center in the
@@ -90,6 +93,13 @@ and a first-stage route-C Accessibility transport. Auto-send is off by default.
   package checks remain. Users must not switch chats during an automatic send.
 - Explicit agent sessions with per-chat memory, close-time event summaries and
   configurable 1/3/7/31-day or permanent retention.
+- The extraction model decides when a conversation phase has ended and writes
+  memory back to A0/A1/A2 plus a rolling A3 session summary.
+- Extraction receives all active A0/A1 memories, relevant A0/A2 memories, the
+  previous A3 summary and recent source messages. A3 and recent sources are
+  reference-only and cannot be cited as evidence.
+- New A0 facts and changes to existing A0 memory remain in a review queue until
+  explicitly approved. Persona configuration remains protected from chat.
 - Contact switching and stopping detach the active session immediately. A
   single background memory worker summarizes closing/pending sessions with
   persisted recovery and visible queue progress.

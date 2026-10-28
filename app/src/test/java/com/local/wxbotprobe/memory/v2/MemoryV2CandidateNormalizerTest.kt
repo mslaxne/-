@@ -16,12 +16,37 @@ class MemoryV2CandidateNormalizerTest {
     }
 
     @Test
+    fun `current prompt epistemic values are strict`() {
+        assertEquals(
+            "declared",
+            MemoryV2CandidateNormalizer.epistemic(
+                "declared",
+                allowSynonyms = false,
+            ),
+        )
+        assertNull(
+            MemoryV2CandidateNormalizer.epistemic(
+                "asserted",
+                allowSynonyms = false,
+            ),
+        )
+    }
+
+    @Test
     fun `importance labels and numbers normalize to unit interval`() {
         assertEquals(0.8, MemoryV2CandidateNormalizer.importance("high"), 0.0)
         assertEquals(0.5, MemoryV2CandidateNormalizer.importance("medium"), 0.0)
         assertEquals(0.7, MemoryV2CandidateNormalizer.importance("0.7"), 0.0)
         assertEquals(1.0, MemoryV2CandidateNormalizer.importance(4), 0.0)
         assertEquals(0.5, MemoryV2CandidateNormalizer.importance(null), 0.0)
+        assertEquals(
+            0.5,
+            MemoryV2CandidateNormalizer.importance(
+                "medium",
+                allowLabelSynonyms = false,
+            ),
+            0.0,
+        )
     }
 
     @Test

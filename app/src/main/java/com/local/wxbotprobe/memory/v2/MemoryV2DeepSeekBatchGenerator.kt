@@ -109,6 +109,7 @@ class MemoryV2DeepSeekBatchGenerator(
                 job.scopeId,
                 job.envelope.targetVersions,
             )
+            val working = sessionWorkingState(db, job)
             input
                 .put(
                     "existing_memories",
@@ -125,6 +126,19 @@ class MemoryV2DeepSeekBatchGenerator(
                 .put(
                     "pending_conflicts",
                     pendingConflicts(db, job.scopeId),
+                )
+                .put(
+                    "working_summary_context",
+                    JSONObject()
+                        .put("reference_only", true)
+                        .put("version", job.envelope.baseWorkingSummaryVersion)
+                        .put("summary", working.first),
+                )
+                .put(
+                    "recent_source_context",
+                    JSONObject()
+                        .put("reference_only", true)
+                        .put("messages", recentSourceContext(db, job)),
                 )
                 .put(
                     "output_contract",
@@ -149,7 +163,7 @@ class MemoryV2DeepSeekBatchGenerator(
     ): Pair<JSONObject, JSONArray> {
         db.query(
             "sessions",
-            arrayOf("working_summary", "working_sources"),
+            arrayOf("working_summary", "working_sources", "working_version"),
             "scope_id=? AND session_id=?",
             arrayOf(job.scopeId, job.sessionId),
             null,
@@ -160,6 +174,12 @@ class MemoryV2DeepSeekBatchGenerator(
             if (!cursor.moveToFirst()) {
                 throw MemoryV2Exception(MemoryV2ErrorCode.UNAUTHORIZED_SCOPE)
             }
+            if (
+                cursor.getInt(cursor.getColumnIndexOrThrow("working_version")) !=
+                job.envelope.baseWorkingSummaryVersion
+            ) {
+                throw MemoryV2Exception(MemoryV2ErrorCode.STALE_SUMMARY)
+            }
             val summary = runCatching {
                 JSONObject(cursor.string("working_summary"))
             }.getOrElse { JSONObject() }
@@ -168,6 +188,59 @@ class MemoryV2DeepSeekBatchGenerator(
             }.getOrElse { JSONArray() }
             return summary to sources
         }
+    }
+
+    private fun recentSourceContext(
+        db: SQLiteDatabase,
+        job: LeasedMemoryJob,
+    ): JSONArray {
+        val limit = config.extractionRecentContextSources
+        if (limit <= 0 || job.envelope.sources.isEmpty()) {
+            return JSONArray()
+        }
+        val placeholders = job.envelope.sources.joinToString(",") { "?" }
+        val sourceArgs = arrayOf(
+            job.scopeId,
+            job.sessionId,
+            *job.envelope.sources.map { it.messageId }.toTypedArray(),
+        )
+        val firstSourceSeq = db.rawQuery(
+            "SELECT MIN(seq) FROM messages WHERE scope_id=? AND session_id=? " +
+                "AND message_id IN ($placeholders)",
+            sourceArgs,
+        ).use { cursor ->
+            if (!cursor.moveToFirst() || cursor.isNull(0)) {
+                return JSONArray()
+            }
+            cursor.getLong(0)
+        }
+        val rows = db.rawQuery(
+            "SELECT message_id,revision,content_sha256,role,body,occurred_at,timezone " +
+                "FROM messages WHERE scope_id=? AND session_id=? AND seq<? " +
+                "AND state='live' AND body IS NOT NULL ORDER BY seq DESC LIMIT ?",
+            arrayOf(
+                job.scopeId,
+                job.sessionId,
+                firstSourceSeq.toString(),
+                limit.toString(),
+            ),
+        ).use { cursor ->
+            buildList {
+                while (cursor.moveToNext()) {
+                    add(
+                        JSONObject()
+                            .put("message_id", cursor.getString(0).orEmpty())
+                            .put("revision", cursor.getInt(1))
+                            .put("sha256", cursor.getString(2).orEmpty())
+                            .put("role", cursor.getString(3).orEmpty())
+                            .put("text", cursor.getString(4).orEmpty())
+                            .put("occurred_at", cursor.getLong(5))
+                            .put("timezone", cursor.getString(6).orEmpty()),
+                    )
+                }
+            }.asReversed()
+        }
+        return JSONArray(rows)
     }
 
     private fun entities(db: SQLiteDatabase, scopeId: String): JSONArray {

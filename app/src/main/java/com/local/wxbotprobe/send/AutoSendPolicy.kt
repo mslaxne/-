@@ -2,7 +2,6 @@ package com.local.wxbotprobe.send
 
 enum class AutoSendBlockReason {
     CHAT_UNAVAILABLE,
-    CONTACT_NOT_ALLOWED,
     QUIET_HOURS,
     DAILY_MESSAGE_LIMIT,
     DAILY_COST_LIMIT,
@@ -10,7 +9,6 @@ enum class AutoSendBlockReason {
 
 data class AutoSendPolicyInput(
     val chatTitle: String,
-    val whitelist: Set<String>,
     val sentToday: Int,
     val remainingParts: Int,
     val spentUsdToday: Double,
@@ -27,9 +25,6 @@ object AutoSendPolicy {
         val title = input.chatTitle.trim()
         if (title.isBlank()) {
             return AutoSendBlockReason.CHAT_UNAVAILABLE
-        }
-        if (title !in input.whitelist) {
-            return AutoSendBlockReason.CONTACT_NOT_ALLOWED
         }
         if (input.quietHoursEnabled && inQuietHours(
                 input.currentMinute,
@@ -52,8 +47,6 @@ object AutoSendPolicy {
         return when (reason) {
             AutoSendBlockReason.CHAT_UNAVAILABLE ->
                 "当前聊天标题不可用，自动发送已暂停。"
-            AutoSendBlockReason.CONTACT_NOT_ALLOWED ->
-                "当前联系人不在自动发送白名单，消息保留在队列。"
             AutoSendBlockReason.QUIET_HOURS ->
                 "当前处于静默时段，消息保留在队列。"
             AutoSendBlockReason.DAILY_MESSAGE_LIMIT ->

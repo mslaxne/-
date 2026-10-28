@@ -131,8 +131,11 @@ class MemoryV2AdminStore(
                 "(m.expires_at IS NULL OR m.expires_at>?) AND " +
                 "m.commitment_state IN " +
                 "('proposed','active','overdue_unknown')) AS pending_count " +
-                ",(SELECT COUNT(*) FROM memory_conflicts c " +
-                "WHERE c.scope_id=s.scope_id AND c.state='pending') " +
+                ",((SELECT COUNT(*) FROM memory_conflicts c " +
+                "WHERE c.scope_id=s.scope_id AND c.state='pending') + " +
+                "(SELECT COUNT(*) FROM memories m WHERE m.scope_id=s.scope_id " +
+                "AND m.tier='A0' AND m.lifecycle='needs_review' " +
+                "AND m.retracted_at IS NULL)) " +
                 "AS pending_conflict_count " +
                 "FROM scopes s WHERE s.state='active' " +
                 "ORDER BY display_name COLLATE NOCASE,scope_id",
@@ -283,9 +286,7 @@ class MemoryV2AdminStore(
                         MemoryV2MemoryRow(
                             memoryId = cursor.getString(0).orEmpty(),
                             version = cursor.getInt(1),
-                            text = MemoryV2MemoryWording.forCurrentPersona(
-                                cursor.getString(2).orEmpty(),
-                            ),
+                            text = cursor.getString(2).orEmpty(),
                             tier = cursor.getString(3).orEmpty(),
                             predicate = cursor.getString(4).orEmpty(),
                             subjectId = cursor.getString(5).orEmpty(),
@@ -361,6 +362,13 @@ class MemoryV2AdminStore(
         return MemoryV2ConflictService(context, database).list(scopeId)
     }
 
+    fun pendingA0Proposals(
+        scopeId: String,
+    ): List<MemoryV2A0ProposalRow> {
+        return MemoryV2ConflictService(context, database)
+            .listA0Proposals(scopeId)
+    }
+
     fun resolveConflict(
         scopeId: String,
         conflictId: String,
@@ -370,6 +378,20 @@ class MemoryV2AdminStore(
         return MemoryV2ConflictService(context, database).resolve(
             scopeId,
             conflictId,
+            decision,
+            a0Confirmed,
+        )
+    }
+
+    fun resolveA0Proposal(
+        scopeId: String,
+        memoryId: String,
+        decision: String,
+        a0Confirmed: Boolean = false,
+    ): MemoryV2ConflictResolution {
+        return MemoryV2ConflictService(context, database).resolveA0Proposal(
+            scopeId,
+            memoryId,
             decision,
             a0Confirmed,
         )

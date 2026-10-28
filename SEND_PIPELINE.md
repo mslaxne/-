@@ -23,15 +23,18 @@ The app can now deliver a generated reply without ADB input commands.
 - The BotIme keyboard no longer exposes a clickable test-write button. Its bottom
   area is a same-sized non-clickable status surface, so send-coordinate mistakes
   cannot inject `这是测试` into the WeChat draft.
-- Auto-send is off by default. The explicit switch is stored locally.
+- There is no contact whitelist or separate auto-send switch. Starting or
+  resuming the Agent binds the first stable recognized private chat as the only
+  send target for that run.
 - Chat title/fingerprint is recorded when a reply is queued, but it is not
   rechecked during the active send. WeChat can replace the title with
   `对方正在输入中`, which made the old header-pixel guard cancel valid sends.
 - Every write and send tap still requires `com.tencent.mm` in the foreground and
   BotIme's current editor package to be `com.tencent.mm`; screen-off and locked
   checks remain active.
-- Switching chats inside WeChat cannot be detected reliably. The auto-send UI
-  explicitly warns users not to switch chats during a send.
+- A change in chat title or fingerprint pauses the Agent. Group and unrecognized
+  chats are rejected. An active send still warns users not to switch chats
+  before the current tap completes.
 - Pending deliveries are persisted under `files/outbox/`. Each confirmed part
   advances `nextPartIndex`, so a partial failure resumes from the first unsent
   bubble instead of replaying the full reply.
@@ -66,14 +69,14 @@ The app can now deliver a generated reply without ADB input commands.
   not enter this queue.
 - The Home deployment summary shows waiting and permanently failed generation
   counts in addition to queued deliveries.
-- Every queued delivery is checked before sending against a normalized contact
-  whitelist, local quiet hours, the daily sent-bubble cap and the daily API-cost
-  cap. Blocked deliveries remain in the outbox and are not deleted.
+- Every queued delivery is checked before sending against the bound chat
+  fingerprint/title, local quiet hours, the daily sent-bubble cap and the daily
+  API-cost cap. Blocked deliveries remain in the outbox and are not deleted.
 - Route C sender screenshots start at a 1.5-second interval. A system
   rate-limit response raises future screenshot pacing to 3.5 seconds; polling
   remains at three seconds.
-- The default guard values are an empty whitelist, 50 bubbles per local day,
-  `$1.00` API cost per local day, and quiet hours `23:00-07:00`.
+- The default guard values are 50 bubbles per local day, `$1.00` API cost per
+  local day, and quiet hours `23:00-07:00`.
 - API spend is recorded per successful model call from actual prompt and
   completion token usage. Pricing uses conservative peak rates: flash
   `$0.30/M` input and `$1.20/M` output, pro `$1.32/M` input and `$3.96/M`

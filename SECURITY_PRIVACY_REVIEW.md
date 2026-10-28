@@ -2,7 +2,7 @@
 
 Last reviewed: 2026-10-27.
 
-Current source candidate: `1.0.129` (153). Device validation is still required.
+Current source candidate: `1.0.130` (154). Device validation is still required.
 
 This is a focused static and release-artifact review, not a security
 certification. It covers backups, debug exports, API-key storage, chat-title
@@ -35,6 +35,14 @@ snapshot. Identity, roleplay, prompt-injection and real-world capability rules
 are prompt-only: no deterministic post-check or fixed reply replacement exists.
 Those guarantees therefore depend on model compliance.
 
+### Extraction reference context
+
+Each extraction request may send all active A0/A1 memory, query-matched A0/A2
+memory, the previous A3 working summary and up to 16 recent extracted source
+messages to the configured model. A3 and recent sources are marked reference-only
+and cannot be used as evidence. New and changed A0 memory requires explicit
+human approval; persona/profile/config fields remain program-protected.
+
 ### P2: Runtime artifacts default to permanent retention
 
 `RuntimeDataSettings` defaults to retention `0` and size limit `0`, meaning
@@ -58,7 +66,7 @@ processing.
 
 ## Verification
 
-- Route C and Route B each pass `429` JVM tests with zero failures/errors.
+- Route C and Route B each pass `455` JVM tests with zero failures/errors.
 - Both Lint reports say `No issues found.`
 - Release APK inspection confirms the backup attributes and all exclusion
   domains.

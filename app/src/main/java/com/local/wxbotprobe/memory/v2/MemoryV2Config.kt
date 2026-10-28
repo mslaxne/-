@@ -41,6 +41,7 @@ data class MemoryV2Config(
     val maxEvidencePerMemory: Int,
     val backgroundMaxSources: Int,
     val backgroundMinBatchMessages: Int,
+    val extractionRecentContextSources: Int,
     val backgroundMaxAttempts: Int,
     val backgroundLeaseSeconds: Long,
     val backgroundBackoffSeconds: List<Long>,
@@ -172,6 +173,10 @@ object MemoryV2ConfigLoader {
                 "min_batch_messages",
                 8,
             ).coerceAtLeast(1),
+            extractionRecentContextSources = background.optInt(
+                "recent_context_sources",
+                16,
+            ).coerceAtLeast(0),
             backgroundMaxAttempts = background.optInt("max_attempts", 3),
             backgroundLeaseSeconds = background.optLong("lease_seconds", 60L),
             backgroundBackoffSeconds = buildList {

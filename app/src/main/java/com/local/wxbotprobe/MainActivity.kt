@@ -51,6 +51,7 @@ class MainActivity : Activity() {
     private var pendingScreenshotAfterPermission = false
     private var shutdownInProgress = false
     private var skipPersonaPresetMigration = false
+    private var skipMemoryAutomation = false
     private val mainHandler = Handler(Looper.getMainLooper())
 
     private val statusReceiver = object : BroadcastReceiver() {
@@ -74,7 +75,7 @@ class MainActivity : Activity() {
             .recoverInterruptedSends()
         setContentView(buildContentView())
         RuntimeDataMaintenance.runPolicyOnce(this)
-        val skipMemoryAutomation = BuildConfig.DEBUG &&
+        skipMemoryAutomation = BuildConfig.DEBUG &&
             intent?.getBooleanExtra("skip_memory_automation", false) == true
         if (!skipMemoryAutomation) {
             MemoryV2BackgroundWorker.kick(this)
@@ -94,6 +95,9 @@ class MainActivity : Activity() {
     override fun onResume() {
         super.onResume()
         restoreBubbleIfNeeded()
+        if (!skipMemoryAutomation) {
+            MemoryV2BackgroundWorker.kick(this)
+        }
         if (!skipPersonaPresetMigration) {
             refreshStatus()
         }
@@ -208,7 +212,7 @@ class MainActivity : Activity() {
             onOpenPersona = { openScreen("persona") },
             onOpenDiagnostics = { openScreen("diagnostics") },
             onRefreshRequested = ::refreshStatus,
-            onOpenWeChatSoon = ::switchToWeChatSoon,
+            onOpenWeChatSoon = ::openWeChatSoon,
             onRequestNotification = ::openNotificationPermissionFlow,
         )
         diagnosticsPage = DiagnosticsPageView(
@@ -217,7 +221,7 @@ class MainActivity : Activity() {
             onStartAgent = ::startBotLoop,
             onStopAgent = ::stopBotLoop,
             onConfigureApiKey = settingsPage::showModelConfigDialog,
-            onOpenWeChatSoon = ::switchToWeChatSoon,
+            onOpenWeChatSoon = ::openWeChatSoon,
         )
 
         homeScreen = homePage.view
@@ -413,7 +417,7 @@ class MainActivity : Activity() {
             AgentSetupStep.BATTERY -> openBatteryOptimizationSettings()
             AgentSetupStep.DEVICE_PROFILE -> Unit
             AgentSetupStep.API_KEY -> settingsPage.showModelConfigDialog()
-            AgentSetupStep.OPEN_WECHAT -> switchToWeChatSoon()
+            AgentSetupStep.OPEN_WECHAT -> openWeChatSoon()
         }
         mainHandler.postDelayed({ refreshStatus() }, 500L)
     }
@@ -524,7 +528,7 @@ class MainActivity : Activity() {
             }
             startService(intent)
             ProbeStatus.write(this, "5 秒后截图。请保持微信聊天界面。")
-            switchToWeChatSoon()
+            openWeChatSoon()
             return
         }
 
@@ -535,10 +539,20 @@ class MainActivity : Activity() {
         )
     }
 
-    private fun switchToWeChatSoon() {
-        Toast.makeText(this, "5 秒内切回微信", Toast.LENGTH_SHORT).show()
+    private fun openWeChatSoon() {
+        Toast.makeText(this, "正在打开微信", Toast.LENGTH_SHORT).show()
         window.decorView.postDelayed({
-            moveTaskToBack(true)
+            val launchIntent = packageManager.getLaunchIntentForPackage(
+                RouteCImePolicy.WECHAT_PACKAGE,
+            )
+            if (launchIntent == null) {
+                Toast.makeText(this, "未找到微信，请确认已安装", Toast.LENGTH_LONG).show()
+                return@postDelayed
+            }
+            launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            if (runCatching { startActivity(launchIntent) }.isFailure) {
+                Toast.makeText(this, "无法自动打开微信，请手动切回", Toast.LENGTH_LONG).show()
+            }
         }, 700L)
     }
 
@@ -561,7 +575,7 @@ class MainActivity : Activity() {
         }
         startForegroundService(intent)
         ProbeStatus.write(this, "录屏授权成功。5 秒后截图，请切回微信。")
-        switchToWeChatSoon()
+        openWeChatSoon()
     }
 
     override fun onRequestPermissionsResult(

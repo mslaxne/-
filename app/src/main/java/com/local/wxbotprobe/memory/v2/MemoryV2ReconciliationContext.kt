@@ -57,6 +57,13 @@ class MemoryV2ReconciliationContextReader(
             return emptyList()
         }
         val terms = searchTerms(sourceText)
+        val coreRows = queryCandidates(
+            db = db,
+            scopeId = scopeId,
+            terms = emptyList(),
+            tier = "A0",
+            limit = 0,
+        )
         val keywordRows = if (terms.isEmpty()) {
             emptyList()
         } else {
@@ -75,7 +82,7 @@ class MemoryV2ReconciliationContextReader(
             tier = "A1",
             limit = config.retrievalSelectedLimit,
         )
-        return (keywordRows + stableRows)
+        return (coreRows + keywordRows + stableRows)
             .distinctBy { it.memoryId }
             .map { it to score(it, terms) }
             .sortedWith(
@@ -87,7 +94,13 @@ class MemoryV2ReconciliationContextReader(
             )
             .let { ranked ->
                 if (config.retrievalSelectedLimit > 0) {
-                    ranked.take(config.retrievalSelectedLimit)
+                    val core = ranked.filter { it.first.tier == "A0" }
+                    val remaining = ranked.filterNot { it.first.tier == "A0" }
+                        .take(
+                            (config.retrievalSelectedLimit - core.size)
+                                .coerceAtLeast(0),
+                        )
+                    core + remaining
                 } else {
                     ranked
                 }
@@ -259,7 +272,7 @@ class MemoryV2ReconciliationContextReader(
             subjectId = cursor.string("subject_id"),
             viewpointId = cursor.getNullableString("viewpoint_id"),
             predicate = cursor.string("predicate"),
-            text = MemoryV2MemoryWording.forCurrentPersona(cursor.string("text")),
+            text = cursor.string("text"),
             value = decodeValue(cursor.string("value_json")),
             temporalJson = cursor.string("temporal_json"),
             commitmentState = cursor.getNullableString("commitment_state"),

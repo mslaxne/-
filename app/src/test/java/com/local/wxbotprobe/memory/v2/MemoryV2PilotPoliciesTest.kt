@@ -180,184 +180,59 @@ class MemoryV2PilotPoliciesTest {
     }
 
     @Test
-    fun `birthday mismatch asks before changing long term memory`() {
-        val decision = MemoryV2ConflictConfirmationPolicy.decide(
-            existingTier = "A1",
-            candidateOperation = MemoryV2ReconciliationPolicy.SUPERSEDE,
-            subjectKind = "person",
-            predicate = "profile.birthday",
-            userSourceTexts = listOf("明天就是我的生日了，你准备好送什么了吗？"),
-        )
-
-        assertEquals(
-            MemoryV2ConflictConfirmationDecision.ASK_CONFIRMATION,
-            decision,
-        )
-    }
-
-    @Test
-    fun `explicit correction and explicit changed state authorize update`() {
-        assertEquals(
-            MemoryV2ConflictConfirmationDecision.ALLOW_UPDATE,
-            decision("你记错了，是10月26日。"),
-        )
-        assertEquals(
-            MemoryV2ConflictConfirmationDecision.ALLOW_UPDATE,
-            decision("你确实记错了，是10月26日。"),
-        )
-        assertEquals(
-            MemoryV2ConflictConfirmationDecision.ALLOW_UPDATE,
-            decision("你肯定记反了，我根本没在杭州住过。"),
-        )
-        assertEquals(
-            MemoryV2ConflictConfirmationDecision.ALLOW_UPDATE,
-            MemoryV2ConflictConfirmationPolicy.decide(
+    fun `A1 and A2 updates do not use programmatic semantic confirmation`() {
+        assertFalse(
+            MemoryV2ConflictPolicy.requiresManualReview(
                 existingTier = "A1",
-                candidateOperation = MemoryV2ReconciliationPolicy.SUPERSEDE,
+                candidateTier = "A1",
                 subjectKind = "person",
                 predicate = "profile.city",
-                userSourceTexts = listOf(
-                    "你明明搞错了，我根本没在杭州住过。",
-                    "我已经搬去上海了。",
-                ),
             ),
         )
-        assertEquals(
-            MemoryV2ConflictConfirmationDecision.ALLOW_UPDATE,
-            decision("现在已经改成10月26日了。"),
-        )
-        assertEquals(
-            MemoryV2ConflictConfirmationDecision.ALLOW_UPDATE,
-            decision("不是10月27日，是10月26日。"),
-        )
-        assertEquals(
-            MemoryV2ConflictConfirmationDecision.ALLOW_UPDATE,
-            decision("不是这样啊，你记错了。"),
-        )
-        assertEquals(
-            MemoryV2ConflictConfirmationDecision.ALLOW_UPDATE,
-            decision("我已经离婚了。"),
-        )
-        assertEquals(
-            MemoryV2ConflictConfirmationDecision.ALLOW_UPDATE,
-            decision("草莓我早就吃腻了，现在更偏爱咖啡。"),
-        )
-        assertEquals(
-            MemoryV2ConflictConfirmationDecision.ALLOW_UPDATE,
-            decision("我现在不喜欢草莓冰淇淋了。"),
-        )
-        assertEquals(
-            MemoryV2ConflictConfirmationDecision.ALLOW_UPDATE,
-            decision("我改主意了，以后更喜欢咖啡。"),
-        )
-        assertEquals(
-            MemoryV2ConflictConfirmationDecision.ALLOW_UPDATE,
-            MemoryV2ConflictConfirmationPolicy.decide(
-                existingTier = "A1",
-                candidateOperation = MemoryV2ReconciliationPolicy.SUPERSEDE,
-                subjectKind = "person",
-                predicate = "profile.city",
-                userSourceTexts = listOf(
-                    "你之前在杭州对吧？",
-                    "以后不在杭州了，我住苏州。",
-                ),
-            ),
-        )
-        assertEquals(
-            MemoryV2ConflictConfirmationDecision.ALLOW_UPDATE,
-            decision("可能是吧，但你确实记错了，我现在只喝燕麦奶。"),
-        )
-        assertEquals(
-            MemoryV2ConflictConfirmationDecision.ALLOW_UPDATE,
-            decision("我上个月搬到上海了，现在一直住在上海。"),
-        )
-    }
-
-    @Test
-    fun `ambiguous agreement preserves the old memory`() {
-        listOf(
-            "好像是哦",
-            "好像是吧，我也记不清了",
-            "可能是吧",
-            "也许是吧",
-            "这样啊",
-            "我记错了",
-        ).forEach { text ->
-            assertEquals(
-                text,
-                MemoryV2ConflictConfirmationDecision.KEEP_EXISTING,
-                decision(text),
-            )
-        }
-        assertEquals(
-            MemoryV2ConflictConfirmationDecision.KEEP_EXISTING,
-            MemoryV2ConflictConfirmationPolicy.decide(
-                existingTier = "A1",
-                candidateOperation = MemoryV2ReconciliationPolicy.SUPERSEDE,
-                subjectKind = "person",
-                predicate = "profile.city",
-                userSourceTexts = listOf(
-                    "我之前说可能搬到上海了。",
-                    "可能是吧，我记不清了。",
-                ),
+        assertFalse(
+            MemoryV2ConflictPolicy.requiresManualReview(
+                existingTier = "A2",
+                candidateTier = "A2",
+                subjectKind = "agent",
+                predicate = "event.shared_dinner",
             ),
         )
     }
 
     @Test
-    fun `persona config cannot be changed by chat`() {
+    fun `new or existing A0 memory requires manual review`() {
         assertTrue(
-            MemoryV2ConflictConfirmationPolicy.isProtectedPersona(
+            MemoryV2ConflictPolicy.requiresManualReview(
+                existingTier = "A1",
+                candidateTier = "A0",
+                subjectKind = "person",
+                predicate = "relationship.role",
+            ),
+        )
+        assertTrue(
+            MemoryV2ConflictPolicy.requiresManualReview(
+                existingTier = "A0",
+                candidateTier = "A1",
+                subjectKind = "person",
+                predicate = "relationship.role",
+            ),
+        )
+    }
+
+    @Test
+    fun `persona config is protected without becoming a review candidate`() {
+        assertTrue(
+            MemoryV2ConflictPolicy.isProtectedPersona(
                 "agent",
                 "profile.personality",
             ),
         )
-        assertEquals(
-            MemoryV2ConflictConfirmationDecision.PROTECTED,
-            MemoryV2ConflictConfirmationPolicy.decide(
+        assertFalse(
+            MemoryV2ConflictPolicy.requiresManualReview(
                 existingTier = "A1",
-                candidateOperation = MemoryV2ReconciliationPolicy.SUPERSEDE,
+                candidateTier = "A1",
                 subjectKind = "agent",
                 predicate = "profile.personality",
-                userSourceTexts = listOf("你记错了，你其实很外向"),
-            ),
-        )
-    }
-
-    @Test
-    fun `shared event can be corrected but A3 never adjudicates`() {
-        assertEquals(
-            MemoryV2ConflictConfirmationDecision.ALLOW_UPDATE,
-            MemoryV2ConflictConfirmationPolicy.decide(
-                existingTier = "A2",
-                candidateOperation = MemoryV2ReconciliationPolicy.SUPERSEDE,
-                subjectKind = "agent",
-                predicate = "event.shared_dinner",
-                userSourceTexts = listOf("你记错了，我们那天是在家里吃饭。"),
-            ),
-        )
-        assertEquals(
-            MemoryV2ConflictConfirmationDecision.IGNORE_A3,
-            MemoryV2ConflictConfirmationPolicy.decide(
-                existingTier = "A3",
-                candidateOperation = MemoryV2ReconciliationPolicy.SUPERSEDE,
-                subjectKind = "person",
-                predicate = "profile.birthday",
-                userSourceTexts = listOf("你记错了"),
-            ),
-        )
-    }
-
-    @Test
-    fun `A0 conflict remains review gated even after explicit correction`() {
-        assertEquals(
-            MemoryV2ConflictConfirmationDecision.ASK_CONFIRMATION,
-            MemoryV2ConflictConfirmationPolicy.decide(
-                existingTier = "A0",
-                candidateOperation = MemoryV2ReconciliationPolicy.SUPERSEDE,
-                subjectKind = "person",
-                predicate = "relationship.role",
-                userSourceTexts = listOf("你记错了"),
             ),
         )
     }
@@ -373,16 +248,6 @@ class MemoryV2PilotPoliciesTest {
             safetyMarginTokens = 512,
             framingFixedTokens = 256,
             targetInputTokens = 0,
-        )
-    }
-
-    private fun decision(text: String): MemoryV2ConflictConfirmationDecision {
-        return MemoryV2ConflictConfirmationPolicy.decide(
-            existingTier = "A1",
-            candidateOperation = MemoryV2ReconciliationPolicy.SUPERSEDE,
-            subjectKind = "person",
-            predicate = "profile.birthday",
-            userSourceTexts = listOf(text),
         )
     }
 

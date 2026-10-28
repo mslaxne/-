@@ -110,9 +110,7 @@ class MemoryV2RetrievalService(
                             version = cursor.int("version"),
                             tier = cursor.string("tier"),
                             predicate = cursor.string("predicate"),
-                            text = MemoryV2MemoryWording.forCurrentPersona(
-                                cursor.string("text"),
-                            ),
+                            text = cursor.string("text"),
                             temporalJson = cursor.string("temporal_json"),
                             expiresAt = cursor.getLongOrNull("expires_at"),
                             sourceAnchor = cursor.getLong(

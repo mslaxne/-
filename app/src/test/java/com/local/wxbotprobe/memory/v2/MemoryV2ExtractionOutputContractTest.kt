@@ -16,6 +16,7 @@ class MemoryV2ExtractionOutputContractTest {
                 "contract",
                 "envelope",
                 "processed_message_ids",
+                "phase",
                 "candidates",
             ),
             contract.getJSONArray("top_level_required").toStringList(),
@@ -27,6 +28,7 @@ class MemoryV2ExtractionOutputContractTest {
         assertEquals(
             listOf(
                 "candidate_id",
+                "tier",
                 "operation",
                 "relation_type",
                 "subject_id",
@@ -64,6 +66,18 @@ class MemoryV2ExtractionOutputContractTest {
         assertFalse(
             contract.getJSONArray("candidate_required").toStringList()
                 .contains("kind"),
+        )
+        assertEquals(
+            listOf("A0", "A1", "A2"),
+            contract.getJSONArray("tier_enum").toStringList(),
+        )
+        assertEquals(
+            listOf(
+                "closed",
+                "closed_through_message_id",
+                "reason",
+            ),
+            contract.getJSONArray("phase_required").toStringList(),
         )
     }
 
@@ -106,6 +120,18 @@ class MemoryV2ExtractionOutputContractTest {
         assertTrue(
             contract.getJSONArray("field_rules").toStringList()
                 .any { it.contains("RELATE creates") },
+        )
+        assertTrue(
+            contract.getJSONArray("field_rules").toStringList()
+                .any { it.contains("human review") },
+        )
+        assertTrue(
+            contract.getJSONArray("field_rules").toStringList()
+                .any { it.contains("leading contiguous prefix") },
+        )
+        assertTrue(
+            contract.getJSONArray("field_rules").toStringList()
+                .any { it.contains("only once") },
         )
     }
 

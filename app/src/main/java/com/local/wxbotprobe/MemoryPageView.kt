@@ -18,6 +18,7 @@ import com.local.wxbotprobe.bot.PersonaSelectionService
 import com.local.wxbotprobe.bot.RoleplayConsentRecord
 import com.local.wxbotprobe.bot.RoleplayPolicyService
 import com.local.wxbotprobe.memory.v2.MemoryV2AdminStore
+import com.local.wxbotprobe.memory.v2.MemoryV2A0ProposalRow
 import com.local.wxbotprobe.memory.v2.MemoryV2ConflictRow
 import com.local.wxbotprobe.memory.v2.MemoryV2ConflictService
 import com.local.wxbotprobe.memory.v2.MemoryV2ContactOverview
@@ -246,6 +247,7 @@ class MemoryPageView(
         } ?: requestedContact
         val memories = admin().memories(contact.scopeId)
         val manual = MemoryV2ManualMemoryService(activity)
+        val a0Proposals = admin().pendingA0Proposals(contact.scopeId)
         val conflicts = admin().conflicts(contact.scopeId)
         val persona = PersonaSelectionService(activity)
             .selectedForContact(contact.contactId)
@@ -326,6 +328,33 @@ class MemoryPageView(
                     MainUiComponents.fullWidth().apply { topMargin = dp(6) },
                 )
             }
+        }
+
+        if (a0Proposals.isNotEmpty()) {
+            content.addView(
+                AppUi.textView(
+                    activity,
+                    "待审核 A0 提案",
+                    15f,
+                    AppUi.textSecondary,
+                    true,
+                ),
+                MainUiComponents.fullWidth().apply { topMargin = dp(18) },
+            )
+            content.addView(
+                MainUiComponents.groupViews(
+                    activity,
+                    a0Proposals.map { proposal ->
+                        a0ProposalRow(proposal) {
+                            showA0ProposalReview(proposal) {
+                                dialog.dismiss()
+                                onRefreshRequested()
+                            }
+                        }
+                    },
+                ),
+                MainUiComponents.fullWidth().apply { topMargin = dp(8) },
+            )
         }
 
         if (conflicts.isNotEmpty()) {
@@ -954,6 +983,146 @@ class MemoryPageView(
             "候选：$candidate",
             onClick = onClick,
         ).view
+    }
+
+    private fun a0ProposalRow(
+        proposal: MemoryV2A0ProposalRow,
+        onClick: () -> Unit,
+    ): View {
+        val text = proposal.text.trim().take(80).ifBlank { "（空）" }
+        return MainUiComponents.actionRow(
+            activity,
+            R.drawable.ic_shield_check,
+            "A0 提案：$text",
+            "${proposal.predicate} · ${proposal.evidenceCount} 条证据",
+            onClick = onClick,
+        ).view
+    }
+
+    private fun showA0ProposalReview(
+        proposal: MemoryV2A0ProposalRow,
+        onResolved: () -> Unit,
+    ) {
+        lateinit var dialog: AlertDialog
+        var a0Confirmed = false
+        fun resolve(decision: String) {
+            runCatching {
+                admin().resolveA0Proposal(
+                    proposal.scopeId,
+                    proposal.memoryId,
+                    decision,
+                    a0Confirmed = a0Confirmed,
+                )
+            }.onSuccess {
+                ProbeStatus.write(
+                    activity,
+                    if (decision == MemoryV2ConflictService.APPROVE_A0) {
+                        "A0 核心事实提案已批准。"
+                    } else {
+                        "A0 核心事实提案已拒绝。"
+                    },
+                )
+                dialog.dismiss()
+                onResolved()
+            }.onFailure {
+                ProbeStatus.write(
+                    activity,
+                    "A0 提案审核失败：${it.message}",
+                )
+            }
+        }
+        val content = LinearLayout(activity).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(20), dp(8), dp(20), 0)
+        }
+        val evidence = if (proposal.evidenceQuotes.isEmpty()) {
+            "无证据引文"
+        } else {
+            proposal.evidenceQuotes.take(3).joinToString("\n") { "· $it" }
+        }
+        content.addView(
+            AppUi.textView(
+                activity,
+                "这是 LLM 新提取的 A0 核心事实，批准前不会进入回复上下文。\n\n" +
+                    "${proposal.predicate}\n" +
+                    proposal.text.trim() + "\n\n" +
+                    "依据：${proposal.epistemic} · " +
+                    "${proposal.evidenceCount} 条证据\n\n" +
+                    evidence,
+                14f,
+                AppUi.textSecondary,
+            ).apply {
+                setLineSpacing(dp(3).toFloat(), 1f)
+            },
+            MainUiComponents.fullWidth(),
+        )
+        content.addView(
+            AppUi.textView(
+                activity,
+                "A0 会进入所有后续回复的核心上下文。请核对证据与措辞。",
+                13f,
+                AppUi.paused,
+            ).apply {
+                setPadding(0, dp(12), 0, dp(4))
+                setLineSpacing(dp(3).toFloat(), 1f)
+            },
+            MainUiComponents.fullWidth(),
+        )
+        lateinit var approveRow: MainUiComponents.ActionRow
+        content.addView(
+            CheckBox(activity).apply {
+                text = activity.getString(
+                    R.string.memory_a0_review_confirm,
+                )
+                setTextColor(AppUi.text)
+                buttonTintList =
+                    android.content.res.ColorStateList.valueOf(AppUi.primary)
+                setOnCheckedChangeListener { _, checked ->
+                    a0Confirmed = checked
+                    approveRow.view.isEnabled = checked
+                    approveRow.view.alpha = if (checked) 1f else 0.45f
+                }
+            },
+            MainUiComponents.fullWidth(),
+        )
+        approveRow = MainUiComponents.actionRow(
+            activity,
+            R.drawable.ic_shield_check,
+            "批准 A0 提案",
+            "显式确认后进入核心记忆",
+            onClick = {
+                resolve(MemoryV2ConflictService.APPROVE_A0)
+            },
+        )
+        approveRow.view.isEnabled = false
+        approveRow.view.alpha = 0.45f
+        content.addView(
+            MainUiComponents.groupViews(
+                activity,
+                listOf(
+                    approveRow.view,
+                    MainUiComponents.actionRow(
+                        activity,
+                        R.drawable.ic_bubble_close,
+                        "拒绝 A0 提案",
+                        "保留审计记录，不进入长期上下文",
+                        onClick = {
+                            resolve(MemoryV2ConflictService.REJECT_A0)
+                        },
+                    ).view,
+                ),
+            ),
+            MainUiComponents.fullWidth().apply {
+                topMargin = dp(12)
+                bottomMargin = dp(8)
+            },
+        )
+        dialog = AlertDialog.Builder(activity)
+            .setTitle("审核 A0 核心事实提案")
+            .setView(content)
+            .setNegativeButton("取消", null)
+            .create()
+        dialog.show()
     }
 
     private fun showConflictResolution(
@@ -1911,13 +2080,10 @@ class MemoryPageView(
         MainUiComponents.showDestructiveDialog(
             context = activity,
             title = "删除 $name 的 Memory",
-            message = "会删除这个联系人的 v2 消息、会话和长期记忆，并移出自动发送白名单。",
+            message = "会删除这个联系人的 v2 消息、会话和长期记忆。",
             positiveLabel = "删除",
             onConfirm = {
                 val deleted = admin().deleteScope(contact.scopeId)
-                if (deleted) {
-                    WhitelistContacts.remove(activity, contact.identityKey)
-                }
                 ProbeStatus.write(
                     activity,
                     if (deleted) {
@@ -1942,7 +2108,6 @@ class MemoryPageView(
             positiveLabel = "清空",
             onConfirm = {
                 admin().clearAll()
-                SendSettings.setWhitelist(activity, emptySet())
                 File(activity.filesDir, "memory").deleteRecursively()
                 ProbeStatus.write(activity, "全部 Memory 2.0 数据已清空。")
                 onRefreshRequested()

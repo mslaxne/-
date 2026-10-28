@@ -25,6 +25,9 @@ import com.local.wxbotprobe.loop.PollingCoordinator
 import com.local.wxbotprobe.loop.ReplyGenerationCoordinator
 import com.local.wxbotprobe.loop.SendQueueCoordinator
 import com.local.wxbotprobe.maintenance.RuntimeDataMaintenance
+import com.local.wxbotprobe.send.AuthorizedSendChat
+import com.local.wxbotprobe.send.SendAuthorizationIssue
+import com.local.wxbotprobe.send.SendAuthorizationPolicy
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -54,6 +57,9 @@ class BotLoopService : Service() {
 
     @Volatile
     private var startupEvaluationPending = false
+
+    @Volatile
+    private var boundSendChat: AuthorizedSendChat? = null
 
     @Volatile
     private var running = false
@@ -233,6 +239,7 @@ class BotLoopService : Service() {
             deviceActions = deviceActions,
             outgoingConfirmation = outgoingConfirmation,
             canAutoSend = { AgentRunPolicy.canAutoSend(runState, running) },
+            isSendAuthorized = ::isSendAuthorized,
             onDeliveredReply = { conversationId, text, nowMillis ->
                 replyCoordinator.recordDeliveredReply(conversationId, text, nowMillis)
             },
@@ -250,7 +257,6 @@ class BotLoopService : Service() {
             context = this,
             sendQueue = sendQueueCoordinator,
             canAutoSend = { AgentRunPolicy.canAutoSend(runState, running) },
-            autoSendEnabled = { SendSettings.autoSend(this) },
             onStatus = status,
             onNotification = ::updateNotification,
             onLog = ::log,
@@ -292,6 +298,7 @@ class BotLoopService : Service() {
             }
         }
         groupTitleWarningIssued = false
+        boundSendChat = null
         running = true
         startupEvaluationPending = true
         updateRunState(AgentRunPolicy.next(runState, AgentRunAction.START))
@@ -341,6 +348,7 @@ class BotLoopService : Service() {
         ensureForeground("正在恢复读屏")
         pollingCoordinator.resetForStartupEvaluation()
         groupTitleWarningIssued = false
+        boundSendChat = null
         running = true
         startupEvaluationPending = true
         updateRunState(AgentRunPolicy.next(runState, AgentRunAction.RESUME))
@@ -469,17 +477,20 @@ class BotLoopService : Service() {
             )
         }
         if (!ChatIdentityPolicy.isUsableTitle(snapshot.chat.title)) {
-            log(
-                "poll paused unusable chat titleLength=" +
-                    snapshot.chat.title.length,
+            pauseForSendAuthorization(
+                SendAuthorizationIssue.UNRECOGNIZED_CHAT,
+                snapshot.chat.fingerprint,
             )
             return false
         }
-        memoryCoordinator.open(snapshot.chat, System.currentTimeMillis())
         val reading = pollingCoordinator.observe(snapshot)
         if (!reading.isPrimed) {
             return false
         }
+        if (!ensureSendAuthorization(snapshot)) {
+            return false
+        }
+        memoryCoordinator.open(snapshot.chat, System.currentTimeMillis())
         if (!reading.wasPrimed) {
             val incoming = snapshot.items.count {
                 it.kind == com.local.wxbotprobe.chat.BubbleKind.IN
@@ -521,6 +532,68 @@ class BotLoopService : Service() {
             dispatchCompletedBurst(snapshot, completed)
         }
         return reading.recheckSoon
+    }
+
+    private fun ensureSendAuthorization(snapshot: ScreenSnapshot): Boolean {
+        val current = boundSendChat
+        if (current == null) {
+            val result = SendAuthorizationPolicy.bind(
+                chatFingerprint = snapshot.chat.fingerprint,
+                chatTitle = snapshot.chat.title,
+                isGroup = snapshot.isGroup,
+            )
+            val binding = result.binding
+                ?: run {
+                    pauseForSendAuthorization(
+                        result.issue ?: SendAuthorizationIssue.UNRECOGNIZED_CHAT,
+                        snapshot.chat.fingerprint,
+                    )
+                    return false
+                }
+            boundSendChat = binding
+            ProbeStatus.write(this, "本次代理已绑定当前私聊，启动即授权自动发送。")
+            log(
+                "send authorization bound chatFp=" +
+                    java.lang.Long.toHexString(binding.chatFingerprint) +
+                    " titleLength=${binding.normalizedTitle.length}",
+            )
+            return true
+        }
+        val issue = SendAuthorizationPolicy.check(
+            binding = current,
+            chatFingerprint = snapshot.chat.fingerprint,
+            chatTitle = snapshot.chat.title,
+        ) ?: return true
+        pauseForSendAuthorization(issue, snapshot.chat.fingerprint)
+        return false
+    }
+
+    private fun pauseForSendAuthorization(
+        issue: SendAuthorizationIssue,
+        chatFingerprint: Long,
+    ) {
+        val message = SendAuthorizationPolicy.message(issue)
+        log(
+            "send authorization paused issue=${issue.name.lowercase()} " +
+                "chatFp=${java.lang.Long.toHexString(chatFingerprint)}",
+        )
+        if (runState == AgentRunState.RUNNING) {
+            pauseLoop()
+            ProbeStatus.write(this, "$message 当前会话与发送队列已保留。")
+            updateNotification("当前聊天未获发送授权")
+        }
+    }
+
+    private fun isSendAuthorized(
+        chatFingerprint: Long,
+        chatTitle: String,
+    ): Boolean {
+        val binding = boundSendChat ?: return false
+        return SendAuthorizationPolicy.check(
+            binding = binding,
+            chatFingerprint = chatFingerprint,
+            chatTitle = chatTitle,
+        ) == null
     }
 
     private fun maybeEvaluateStartup(snapshot: ScreenSnapshot) {

@@ -56,9 +56,16 @@ Implemented Android foundation:
   from the startup snapshot so retries and process restarts are idempotent;
 - pending conflicts are supplied as context only. The reply path does not
   generate a per-turn conflict verdict, recommended reply or replacement text;
-- validated non-empty extraction and summary batches commit atomically:
-  extraction candidates become A1/A2 records; summary events become A2 records;
-  A3 working summary/version and coverage are updated in the same transaction.
+- validated extraction and summary batches commit atomically. Extraction
+  candidates carry an LLM-selected A0/A1/A2 tier; new or changed A0 memory stays
+  in `needs_review` until explicitly approved. Summary events remain A2 and the
+  A3 working summary/version/coverage update in the same transaction.
+- extraction context includes all active A0/A1, query-matched A0/A2, the previous
+  A3 summary and up to 16 recent extracted sources. A3 and recent sources are
+  reference-only and cannot be cited as evidence.
+- the model returns a phase checkpoint. `closed=false` consumes no source;
+  `closed=true` consumes only the earliest contiguous closed prefix and leaves
+  the trailing sources pending for a later evaluation.
 - production-shaped background worker now adds persistent per-scope/device hourly
   call budgets, job leasing, retry/failure handling and a DeepSeek batch
   generator that uses the vendored prompts/model profile/token budget.
@@ -70,7 +77,7 @@ Implemented Android foundation:
 - the production Memory page reads v2 contacts, raw message counts, long-term
   memories and commitments directly; migration and rollback controls have been
   removed.
-- Route C and Route B each pass 275 JVM tests; both Lint reports are clean.
+- Route C and Route B each pass 455 JVM tests; both Lint reports are clean.
 - On-device debug self-test passed: 19 contract tables, foreign keys enabled,
   scope creation, message sequence 1, duplicate client message `unchanged`,
   explicit save version 1, pin version 2, three operation receipts, forget

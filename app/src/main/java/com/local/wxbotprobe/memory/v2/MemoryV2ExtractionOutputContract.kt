@@ -13,6 +13,7 @@ object MemoryV2ExtractionOutputContract {
                         "contract",
                         "envelope",
                         "processed_message_ids",
+                        "phase",
                         "candidates",
                     ),
                 ),
@@ -23,6 +24,7 @@ object MemoryV2ExtractionOutputContract {
                 JSONArray(
                     listOf(
                         "candidate_id",
+                        "tier",
                         "operation",
                         "relation_type",
                         "subject_id",
@@ -38,6 +40,17 @@ object MemoryV2ExtractionOutputContract {
                         "commitment_state",
                         "importance_hint",
                         "evidence",
+                    ),
+                ),
+            )
+            .put("tier_enum", JSONArray(listOf("A0", "A1", "A2")))
+            .put(
+                "phase_required",
+                JSONArray(
+                    listOf(
+                        "closed",
+                        "closed_through_message_id",
+                        "reason",
                     ),
                 ),
             )
@@ -76,6 +89,23 @@ object MemoryV2ExtractionOutputContract {
                 JSONArray(
                     listOf(
                         "Use value, never object_value.",
+                        "phase.closed=false means no source has been consumed: " +
+                            "processed_message_ids must be empty and candidates must be empty.",
+                        "When phase.closed=true, processed_message_ids must be the " +
+                            "leading contiguous prefix ending at closed_through_message_id.",
+                        "Candidates may cite evidence only from processed_message_ids.",
+                        "A target_memory_id may appear only once per extraction batch.",
+                        "tier is required and must be A0, A1 or A2. " +
+                            "A3 is the session working_summary, not a candidate tier.",
+                        "A0 is only for stable, explicit core identity, relationship " +
+                            "or long-lived boundary facts whose predicate allows A0.",
+                        "New A0 candidates are stored for human review and do not " +
+                            "become active until approved.",
+                        "working_summary_context and recent_source_context are " +
+                            "reference-only and cannot be used as evidence.",
+                        "A1 is for durable facts, preferences, commitments and " +
+                            "important long-lived experiences.",
+                        "A2 is for time-bound recent events or temporary states.",
                         "The envelope object must contain only job_id and exactly " +
                             "match the frozen job_id.",
                         "ADD uses target_memory_id=null and expected_version=null.",
@@ -98,7 +128,7 @@ object MemoryV2ExtractionOutputContract {
                             "that A1 as target. Do not duplicate the stable fact as " +
                             "ADD or emit an unrelated event without relation_type.",
                         "RETRACT removes only the targeted existing value.",
-                        "Do not output kind, tier, pinned or permission fields.",
+                        "Do not output kind, pinned or permission fields.",
                         "For a stable preference use durable_preference.",
                         "For a dated recent_event, resolve relative dates into " +
                             "local_date YYYY-MM-DD using the source occurred_at and timezone.",

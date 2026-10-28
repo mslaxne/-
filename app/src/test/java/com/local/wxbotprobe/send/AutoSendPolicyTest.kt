@@ -7,7 +7,6 @@ import org.junit.Test
 class AutoSendPolicyTest {
     private fun input(
         chatTitle: String = "张三",
-        whitelist: Set<String> = setOf("张三"),
         sentToday: Int = 0,
         remainingParts: Int = 1,
         spentUsdToday: Double = 0.0,
@@ -20,7 +19,6 @@ class AutoSendPolicyTest {
     ): AutoSendPolicyInput {
         return AutoSendPolicyInput(
             chatTitle = chatTitle,
-            whitelist = whitelist,
             sentToday = sentToday,
             remainingParts = remainingParts,
             spentUsdToday = spentUsdToday,
@@ -34,16 +32,8 @@ class AutoSendPolicyTest {
     }
 
     @Test
-    fun `allowed contact inside limits can send`() {
-        assertNull(AutoSendPolicy.check(input()))
-    }
-
-    @Test
-    fun `empty whitelist blocks every contact`() {
-        assertEquals(
-            AutoSendBlockReason.CONTACT_NOT_ALLOWED,
-            AutoSendPolicy.check(input(whitelist = emptySet())),
-        )
+    fun `recognized contact inside limits can send without a whitelist`() {
+        assertNull(AutoSendPolicy.check(input(chatTitle = "任意联系人")))
     }
 
     @Test

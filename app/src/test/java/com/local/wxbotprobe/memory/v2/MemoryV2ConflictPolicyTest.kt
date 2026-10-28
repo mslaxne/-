@@ -44,4 +44,22 @@ class MemoryV2ConflictPolicyTest {
             ),
         )
     }
+
+    @Test
+    fun `promotion to A0 requires explicit confirmation`() {
+        assertFalse(
+            MemoryV2ConflictPolicy.canAcceptCandidate(
+                existingTier = "A1",
+                candidateTier = "A0",
+                a0Confirmed = false,
+            ),
+        )
+        assertTrue(
+            MemoryV2ConflictPolicy.canAcceptCandidate(
+                existingTier = "A1",
+                candidateTier = "A0",
+                a0Confirmed = true,
+            ),
+        )
+    }
 }

@@ -16,7 +16,7 @@ class MemoryV2AssetsTest {
             sha256(asset("schema.sql")),
         )
         assertEquals(
-            "f6e1039be2c8bad120ce8734b807555f84f0f65a1b0bb4bd1e2d9b7d02de24a0",
+            "9add4e3079b11e5814e962c93df8a41b1270208b9b01364116c4b0eab0f72dd7",
             sha256(asset("memory_contracts.schema.json")),
         )
     }
@@ -64,17 +64,22 @@ class MemoryV2AssetsTest {
         assertFalse(config.getBoolean("enabled"))
         assertEquals("2.0.0", config.getString("schema_version"))
         assertEquals(
-            "extract-2.1.2",
+            "extract-2.5.1",
             config.getJSONObject("versions").getString("extraction_prompt"),
         )
         assertEquals(
-            "summary-2.1.2",
+            "summary-2.2.0",
             config.getJSONObject("versions").getString("summary_prompt"),
         )
         assertEquals(
             8,
             config.getJSONObject("context")
                 .getInt("reply_context_recent_raw_messages"),
+        )
+        assertEquals(
+            16,
+            config.getJSONObject("background")
+                .getInt("recent_context_sources"),
         )
         assertEquals(
             8_192,
@@ -178,6 +183,11 @@ class MemoryV2AssetsTest {
         assertTrue("A3" in answer && "不要" in answer)
         assertTrue("CONTRADICT" in extract && "待确认" in extract)
         assertTrue("A3" in extract)
+        assertTrue("working_summary_context" in extract)
+        assertTrue("recent_source_context" in extract)
+        assertTrue("不能作为 evidence" in extract)
+        assertTrue("phase.closed=false" in extract)
+        assertTrue("连续前缀" in extract)
         assertTrue("滚动检查点" in summary && "8 KiB" in summary)
     }
 

@@ -47,7 +47,12 @@ class MemoryV2BatchCommitService(
             }.map {
                 writeCandidate(db, job, it, background = true)
             }
-            markJobDone(db, job, "extract")
+            markJobDone(
+                db,
+                job,
+                "extract",
+                batch.processedMessageIds,
+            )
             MemoryV2BatchCommitResult(
                 status = "saved",
                 jobId = job.jobId,
@@ -138,7 +143,12 @@ class MemoryV2BatchCommitService(
                     SQLiteDatabase.CONFLICT_IGNORE,
                 )
             }
-            markJobDone(db, job, "summary")
+            markJobDone(
+                db,
+                job,
+                "summary",
+                batch.processedMessageIds,
+            )
             MemoryV2BatchCommitResult(
                 status = "saved",
                 jobId = job.jobId,
@@ -190,6 +200,12 @@ class MemoryV2BatchCommitService(
         background: Boolean,
     ): String {
         val predicate = predicates.rule(candidate.predicate)
+        if (candidate.tier == "A0" && !predicate.allowA0) {
+            throw MemoryV2Exception(
+                MemoryV2ErrorCode.INVALID_ARGUMENT,
+                "predicate does not allow A0",
+            )
+        }
         if (background && candidate.epistemic == "inferred" &&
             candidate.predicate.startsWith("profile.")
         ) {
@@ -203,7 +219,7 @@ class MemoryV2BatchCommitService(
         }
         ensureEntity(db, job.scopeId, candidate.subjectId)
         candidate.viewpointId?.let { ensureEntity(db, job.scopeId, it) }
-        val tier = if (candidate.reason == "recent_event") "A2" else "A1"
+        val tier = candidate.tier
         val eventId = if (
             candidate.operation == MemoryV2ReconciliationPolicy.RELATE
         ) {
@@ -237,18 +253,47 @@ class MemoryV2BatchCommitService(
             ) {
                 throw MemoryV2Exception(MemoryV2ErrorCode.STALE_VERSION)
             }
+            if (
+                existing.lifecycle == "needs_review" &&
+                existing.tier == "A0" &&
+                existing.retractedAt == null
+            ) {
+                return existing.memoryId
+            }
             if (existing.lifecycle != "active" || existing.retractedAt != null) {
                 throw MemoryV2Exception(MemoryV2ErrorCode.MEMORY_NOT_FOUND)
             }
-            if (
-                MemoryV2ConflictConfirmationPolicy.isProtectedPersona(
-                    entityKind(db, job.scopeId, candidate.subjectId),
+            val subjectKind = entityKind(
+                db,
+                job.scopeId,
+                candidate.subjectId,
+            )
+            if (MemoryV2ConflictPolicy.isProtectedPersona(
+                    subjectKind,
                     candidate.predicate,
                 )
             ) {
                 return existing.memoryId
             }
-            if (existing.tier == "A0") {
+            if (candidate.operation == MemoryV2ReconciliationPolicy.NOOP) {
+                if (existing.tier != "A0" && candidate.tier != "A0") {
+                    resolvePendingClarifications(
+                        db,
+                        job.scopeId,
+                        existing.memoryId,
+                        existing.version,
+                        "keep_existing",
+                    )
+                }
+                return existing.memoryId
+            }
+            if (MemoryV2ConflictPolicy.requiresManualReview(
+                    existingTier = existing.tier,
+                    candidateTier = candidate.tier,
+                    subjectKind = subjectKind,
+                    predicate = candidate.predicate,
+                )
+            ) {
                 recordConflict(db, job, candidate, existing, sources)
                 return existing.memoryId
             }
@@ -269,9 +314,6 @@ class MemoryV2BatchCommitService(
             if (candidate.operation != MemoryV2ReconciliationPolicy.RELATE) {
                 ensureSameFactIdentity(existing, candidate)
             }
-            val userSourceTexts = sources
-                .filter { it.role == "user" }
-                .map { it.body }
             return when (candidate.operation) {
                 MemoryV2ReconciliationPolicy.CORROBORATE -> {
                     if (existing.valueJson != candidate.valueJson) {
@@ -282,77 +324,26 @@ class MemoryV2BatchCommitService(
                     }
                 }
                 MemoryV2ReconciliationPolicy.SUPERSEDE -> {
-                    when (
-                        MemoryV2ConflictConfirmationPolicy.decide(
-                            existingTier = existing.tier,
-                            candidateOperation = candidate.operation,
-                            subjectKind = entityKind(
-                                db,
-                                job.scopeId,
-                                candidate.subjectId,
-                            ),
-                            predicate = candidate.predicate,
-                            userSourceTexts = userSourceTexts,
-                        )
-                    ) {
-                        MemoryV2ConflictConfirmationDecision.ALLOW_UPDATE -> {
-                            supersede(db, job, candidate, existing, sources)
-                            if (
-                                findMemory(
-                                    db,
-                                    job.scopeId,
-                                    existing.memoryId,
-                                )?.version != existing.version
-                            ) {
-                                resolvePendingClarifications(
-                                    db,
-                                    job.scopeId,
-                                    existing.memoryId,
-                                existing.version,
-                                    "accepted_candidate",
-                                )
-                            }
-                            existing.memoryId
-                        }
-                        MemoryV2ConflictConfirmationDecision.KEEP_EXISTING -> {
-                            resolvePendingClarifications(
-                                db,
-                                job.scopeId,
-                                existing.memoryId,
-                                existing.version,
-                                "keep_existing",
-                            )
-                            existing.memoryId
-                        }
-                        MemoryV2ConflictConfirmationDecision.PROTECTED ->
-                            existing.memoryId
-                        else -> {
-                            recordConflict(
-                                db,
-                                job,
-                                candidate,
-                                existing,
-                                sources,
-                            )
-                            existing.memoryId
-                        }
-                    }
-                }
-                MemoryV2ReconciliationPolicy.CONTRADICT -> {
+                    supersede(db, job, candidate, existing, sources)
                     if (
-                        MemoryV2ConflictConfirmationPolicy
-                            .isAmbiguousAcknowledgement(userSourceTexts)
+                        findMemory(
+                            db,
+                            job.scopeId,
+                            existing.memoryId,
+                        )?.version != existing.version
                     ) {
                         resolvePendingClarifications(
                             db,
                             job.scopeId,
                             existing.memoryId,
                             existing.version,
-                            "keep_existing",
+                            "accepted_candidate",
                         )
-                    } else {
-                        recordConflict(db, job, candidate, existing, sources)
                     }
+                    existing.memoryId
+                }
+                MemoryV2ReconciliationPolicy.CONTRADICT -> {
+                    recordConflict(db, job, candidate, existing, sources)
                     existing.memoryId
                 }
                 MemoryV2ReconciliationPolicy.RELATE -> {
@@ -388,21 +379,7 @@ class MemoryV2BatchCommitService(
                     }
                     retract(db, job, candidate, existing, sources)
                 }
-                MemoryV2ReconciliationPolicy.NOOP -> {
-                    if (
-                        MemoryV2ConflictConfirmationPolicy
-                            .isAmbiguousAcknowledgement(userSourceTexts)
-                    ) {
-                        resolvePendingClarifications(
-                            db,
-                            job.scopeId,
-                            existing.memoryId,
-                            existing.version,
-                            "keep_existing",
-                        )
-                    }
-                    existing.memoryId
-                }
+                MemoryV2ReconciliationPolicy.NOOP -> existing.memoryId
                 else -> throw MemoryV2Exception(MemoryV2ErrorCode.SCHEMA_INVALID)
             }
         }
@@ -442,7 +419,8 @@ class MemoryV2BatchCommitService(
             throw MemoryV2Exception(MemoryV2ErrorCode.MEMORY_EXPIRED)
         }
         val memoryId = UUID.randomUUID().toString()
-        val memoryText = MemoryV2MemoryWording.forCurrentPersona(candidate.text)
+        val memoryText = candidate.text
+        val pendingA0Review = tier == "A0"
         val byteSize = (
             memoryText + candidate.valueJson + candidate.temporalJson
             ).toByteArray(Charsets.UTF_8).size
@@ -473,14 +451,14 @@ class MemoryV2BatchCommitService(
                 put("epistemic", candidate.epistemic)
                 put(
                     "lifecycle",
-                    if (candidate.commitmentState == "proposed") {
+                    if (pendingA0Review || candidate.commitmentState == "proposed") {
                         "needs_review"
                     } else {
                         "active"
                     },
                 )
                 putNull("retracted_at")
-                put("pinned", 0)
+                put("pinned", if (tier == "A0") 1 else 0)
                 if (candidate.commitmentState == null) {
                     putNull("commitment_state")
                 } else {
@@ -510,8 +488,10 @@ class MemoryV2BatchCommitService(
             },
         )
         insertEvidence(db, job.scopeId, memoryId, sources)
-        emitOutbox(db, job.scopeId, memoryId, 1)
-        bumpScopeRevision(db, job.scopeId)
+        if (!pendingA0Review) {
+            emitOutbox(db, job.scopeId, memoryId, 1)
+            bumpScopeRevision(db, job.scopeId)
+        }
         return memoryId
     }
 
@@ -665,10 +645,7 @@ class MemoryV2BatchCommitService(
                     put("viewpoint_id", candidate.viewpointId)
                 }
                 put("predicate", candidate.predicate)
-                put(
-                    "text",
-                    MemoryV2MemoryWording.forCurrentPersona(candidate.text),
-                )
+                put("text", candidate.text)
                 put("value_json", candidate.valueJson)
                 put("epistemic", candidate.epistemic)
                 put(
@@ -776,7 +753,7 @@ class MemoryV2BatchCommitService(
             .put("subject_id", candidate.subjectId)
             .put("viewpoint_id", candidate.viewpointId ?: JSONObject.NULL)
             .put("predicate", candidate.predicate)
-            .put("tier", existing.tier)
+            .put("tier", candidate.tier)
             .put("text", candidate.text)
             .put("value_json", candidate.valueJson)
             .put("epistemic", candidate.epistemic)
@@ -1146,8 +1123,9 @@ class MemoryV2BatchCommitService(
         db: SQLiteDatabase,
         job: LeasedMemoryJob,
         kind: String,
+        processedMessageIds: List<String>,
     ) {
-        job.envelope.newSourceIds.forEach { messageId ->
+        processedMessageIds.forEach { messageId ->
             val source = job.envelope.sources.first {
                 it.messageId == messageId
             }
@@ -1199,10 +1177,7 @@ class MemoryV2BatchCommitService(
                     items.filter { it.section == section }.forEach { item ->
                         put(
                             JSONObject()
-                                .put(
-                                    "text",
-                                    MemoryV2MemoryWording.forCurrentPersona(item.text),
-                                )
+                                .put("text", item.text)
                                 .put(
                                     "evidence",
                                     JSONArray().apply {
@@ -1375,7 +1350,7 @@ class MemoryV2BatchCommitService(
         scopeId: String,
         candidate: ValidatedMemoryCandidate,
     ): Boolean {
-        return MemoryV2ConflictConfirmationPolicy.isProtectedPersona(
+        return MemoryV2ConflictPolicy.isProtectedPersona(
             subjectKind = entityKind(db, scopeId, candidate.subjectId),
             predicate = candidate.predicate,
         )

@@ -25,6 +25,13 @@ class MemoryV2ReconciliationPolicyTest {
     }
 
     @Test
+    fun `current prompts accept only canonical operation values`() {
+        assertEquals("SUPERSEDE", MemoryV2ReconciliationPolicy.canonical("supersede"))
+        assertNull(MemoryV2ReconciliationPolicy.canonical("update"))
+        assertNull(MemoryV2ReconciliationPolicy.canonical(""))
+    }
+
+    @Test
     fun `add must not carry a target while mutations require id and version`() {
         assertEquals(
             MemoryV2ErrorCode.SCHEMA_INVALID,
@@ -80,5 +87,16 @@ class MemoryV2ReconciliationPolicyTest {
             MemoryV2ReconciliationPolicy.normalizeRelationType("context"),
         )
         assertNull(MemoryV2ReconciliationPolicy.normalizeRelationType("replaces"))
+    }
+
+    @Test
+    fun `current prompts accept only canonical relation values`() {
+        assertEquals(
+            "SUPPORTS",
+            MemoryV2ReconciliationPolicy.canonicalRelationType("supports"),
+        )
+        assertNull(
+            MemoryV2ReconciliationPolicy.canonicalRelationType("corroborates"),
+        )
     }
 }

@@ -33,6 +33,10 @@ object MemoryV2ReconciliationPolicy {
         }
     }
 
+    fun canonical(raw: String?): String? {
+        return raw?.trim()?.uppercase()?.takeIf { it in operations }
+    }
+
     fun requiresTarget(operation: String): Boolean {
         return operation != ADD
     }
@@ -68,6 +72,12 @@ object MemoryV2ReconciliationPolicy {
             "SUPPORT", "SUPPORTS", "CORROBORATE", "CORROBORATES" -> "SUPPORTS"
             "ELABORATE", "ELABORATES", "CONTEXT", "RELATED" -> "ELABORATES"
             else -> null
+        }
+    }
+
+    fun canonicalRelationType(raw: String?): String? {
+        return raw?.trim()?.uppercase()?.takeIf {
+            it in setOf("SUPPORTS", "ELABORATES")
         }
     }
 }

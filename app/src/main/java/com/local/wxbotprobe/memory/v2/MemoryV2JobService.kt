@@ -462,13 +462,6 @@ class MemoryV2JobService(
                 }
             }
             for ((scopeId, candidateSessionId) in sessions) {
-                val latest = latestExtractionJob(db, scopeId, candidateSessionId)
-                if (
-                    latest?.state == "failed" &&
-                    latest.errorCode != MemoryV2ErrorCode.CONTEXT_BUDGET_EXCEEDED.name
-                ) {
-                    continue
-                }
                 val sourceIds = db.rawQuery(
                     "SELECT m.message_id FROM messages m " +
                         "WHERE m.scope_id=? AND m.session_id=? " +
@@ -499,6 +492,36 @@ class MemoryV2JobService(
                 if (sourceIds.isEmpty()) {
                     continue
                 }
+                val latest = latestExtractionJob(db, scopeId, candidateSessionId)
+                if (
+                    latest?.state == "failed" &&
+                    latest.errorCode != MemoryV2ErrorCode.CONTEXT_BUDGET_EXCEEDED.name
+                ) {
+                    continue
+                }
+                val sessionOpen = db.query(
+                    "sessions",
+                    arrayOf("state"),
+                    "scope_id=? AND session_id=?",
+                    arrayOf(scopeId, candidateSessionId),
+                    null,
+                    null,
+                    null,
+                    "1",
+                ).use { cursor ->
+                    cursor.moveToFirst() && cursor.getString(0) == "open"
+                }
+                if (
+                    latest?.state == "saved" &&
+                    MemoryV2ExtractionDeferralPolicy.shouldWaitForMoreSources(
+                        previousSourceIds = latest.sourceIds,
+                        pendingSourceIds = sourceIds,
+                        minimumNewSources = minimumNewMessages,
+                        sessionOpen = sessionOpen,
+                    )
+                ) {
+                    continue
+                }
                 val scope = requireScope(db, scopeId)
                 return enqueue(
                     scope = scope,
@@ -515,7 +538,7 @@ class MemoryV2JobService(
         db: SQLiteDatabase,
         scopeId: String,
         sessionId: String,
-    ): MemorySummaryJobSnapshot? {
+    ): ExtractionJobSnapshot? {
         return db.query(
             "jobs",
             arrayOf("state", "error_code", "envelope_json"),
@@ -530,25 +553,32 @@ class MemoryV2JobService(
                 return null
             }
             val envelope = parseEnvelope(JSONObject(cursor.string("envelope_json")))
-            MemorySummaryJobSnapshot(
+            ExtractionJobSnapshot(
                 state = cursor.string("state"),
                 errorCode = if (cursor.isNull(1)) null else cursor.getString(1),
-                sourceCount = envelope.newSourceIds.size,
+                sourceIds = envelope.newSourceIds,
             )
         }
     }
+
+    private data class ExtractionJobSnapshot(
+        val state: String,
+        val errorCode: String?,
+        val sourceIds: List<String>,
+    )
 
     private fun migrateLegacyExtractionFailures() {
         val preferences = appContext.getSharedPreferences(
             EXTRACTION_SCHEDULER_PREFS,
             Context.MODE_PRIVATE,
         )
-        if (
-            preferences.getInt(EXTRACTION_CONTRACT_REVISION_KEY, 0) >=
-            EXTRACTION_CONTRACT_REVISION
-        ) {
+        val promptVersion = config.versions["extraction_prompt"] ?: "extract-2.5.1"
+        if (preferences.getString(EXTRACTION_PROMPT_REVISION_KEY, null) == promptVersion) {
             return
         }
+        val recoverableCodes =
+            MemoryV2ExtractionFailureRecoveryPolicy.recoverableErrorCodes()
+        val placeholders = recoverableCodes.joinToString(",") { "?" }
         database.writableDatabase.update(
             "jobs",
             ContentValues().apply {
@@ -558,11 +588,11 @@ class MemoryV2JobService(
                 putNull("lease_until")
                 put("updated_at", now())
             },
-            "kind='extract' AND state='failed' AND error_code=?",
-            arrayOf(MemoryV2ErrorCode.SCHEMA_INVALID.name),
+            "kind='extract' AND state='failed' AND error_code IN ($placeholders)",
+            recoverableCodes.toTypedArray(),
         )
         preferences.edit()
-            .putInt(EXTRACTION_CONTRACT_REVISION_KEY, EXTRACTION_CONTRACT_REVISION)
+            .putString(EXTRACTION_PROMPT_REVISION_KEY, promptVersion)
             .apply()
     }
 
@@ -729,9 +759,9 @@ class MemoryV2JobService(
             readSource(db, scope.scopeId, sessionId, sourceId)
         }
         val promptVersion = if (kind == "summary") {
-            config.versions["summary_prompt"] ?: "summary-2.1.2"
+            config.versions["summary_prompt"] ?: "summary-2.2.0"
         } else {
-            config.versions["extraction_prompt"] ?: "extract-2.1.2"
+            config.versions["extraction_prompt"] ?: "extract-2.5.1"
         }
         val resolvedTargetVersions = if (kind == "extract") {
             if (targetVersions.isEmpty()) {
@@ -1020,12 +1050,20 @@ class MemoryV2JobService(
             throw MemoryV2Exception(MemoryV2ErrorCode.SCHEMA_INVALID)
         }
         val processed = stringArray(root.optJSONArray("processed_message_ids"))
-        if (processed != job.envelope.newSourceIds) {
-            throw MemoryV2Exception(MemoryV2ErrorCode.COVERAGE_MISMATCH)
-        }
-        val sourceMap = loadSources(job.envelope)
+        val phaseAware = job.envelope.promptVersion.startsWith("extract-2.5.") ||
+            job.envelope.promptVersion == config.versions["extraction_prompt"]
+        val checkpoint = MemoryV2PhaseCheckpointPolicy.validate(
+            allSourceIds = job.envelope.newSourceIds,
+            processedMessageIds = processed,
+            phase = root.optJSONObject("phase"),
+            phaseAware = phaseAware,
+        )
+        val sourceMap = loadSources(job.envelope, processed.toSet())
         val candidatesJson = root.optJSONArray("candidates")
             ?: throw MemoryV2Exception(MemoryV2ErrorCode.SCHEMA_INVALID)
+        if (!checkpoint.closed && candidatesJson.length() > 0) {
+            throw MemoryV2Exception(MemoryV2ErrorCode.COVERAGE_MISMATCH)
+        }
         val candidates = buildList {
             for (index in 0 until candidatesJson.length()) {
                 add(
@@ -1049,6 +1087,8 @@ class MemoryV2JobService(
             envelope = job.envelope,
             processedMessageIds = processed,
             candidates = candidates,
+            phaseClosed = checkpoint.closed,
+            phaseReason = checkpoint.reason,
         )
     }
 
@@ -1130,7 +1170,7 @@ class MemoryV2JobService(
                 "non-empty extraction requires commit",
             )
         }
-        complete(job, "extract")
+        complete(job, "extract", batch.processedMessageIds)
     }
 
     fun completeEmpty(
@@ -1143,7 +1183,7 @@ class MemoryV2JobService(
                 "non-empty summary requires commit",
             )
         }
-        complete(job, "summary")
+        complete(job, "summary", batch.processedMessageIds)
     }
 
     fun fail(
@@ -1176,7 +1216,11 @@ class MemoryV2JobService(
         }
     }
 
-    private fun complete(job: LeasedMemoryJob, kind: String) {
+    private fun complete(
+        job: LeasedMemoryJob,
+        kind: String,
+        processedMessageIds: List<String>,
+    ) {
         val db = database.writableDatabase
         db.beginTransaction()
         try {
@@ -1185,7 +1229,7 @@ class MemoryV2JobService(
             if (current != "leased") {
                 throw MemoryV2Exception(MemoryV2ErrorCode.JOB_TERMINAL)
             }
-            job.envelope.newSourceIds.forEach { messageId ->
+            processedMessageIds.forEach { messageId ->
                 val source = job.envelope.sources.first { it.messageId == messageId }
                 db.insertWithOnConflict(
                     "coverage",
@@ -1269,7 +1313,8 @@ class MemoryV2JobService(
         }
         val acceptedPromptVersions = if (job.kind == "summary") {
             setOf(
-                config.versions["summary_prompt"] ?: "summary-2.1.2",
+                config.versions["summary_prompt"] ?: "summary-2.2.0",
+                "summary-2.1.2",
                 "summary-2.1.0",
                 "summary-2.0.3",
                 "summary-2.0.2",
@@ -1278,7 +1323,12 @@ class MemoryV2JobService(
             )
         } else {
             setOf(
-                config.versions["extraction_prompt"] ?: "extract-2.1.2",
+                config.versions["extraction_prompt"] ?: "extract-2.5.1",
+                "extract-2.5.0",
+                "extract-2.4.0",
+                "extract-2.3.0",
+                "extract-2.2.0",
+                "extract-2.1.2",
                 "extract-2.1.1",
                 "extract-2.1.0",
                 "extract-2.0.6",
@@ -1302,7 +1352,6 @@ class MemoryV2JobService(
         requireRecentEvent: Boolean,
     ): ValidatedMemoryCandidate {
         if (
-            item.has("tier") ||
             item.has("pinned") ||
             item.has("protection_reasons") ||
             item.has("start_codepoint") ||
@@ -1311,15 +1360,39 @@ class MemoryV2JobService(
             throw MemoryV2Exception(MemoryV2ErrorCode.SCHEMA_INVALID)
         }
         val reason = requiredString(item, "reason")
+        if (reason !in CANDIDATE_REASONS) {
+            throw MemoryV2Exception(MemoryV2ErrorCode.SCHEMA_INVALID)
+        }
+        val strictSemantics = envelope.promptVersion.startsWith("extract-2.3.") ||
+            envelope.promptVersion.startsWith("summary-2.3.")
+        val tier = MemoryV2CandidateTierPolicy.resolve(
+            explicitTier = item.optString("tier").takeIf { item.has("tier") },
+            promptVersion = envelope.promptVersion,
+            reason = reason,
+            requireRecentEvent = requireRecentEvent,
+        ) ?: throw MemoryV2Exception(MemoryV2ErrorCode.SCHEMA_INVALID)
         if (requireRecentEvent && reason != "recent_event") {
             throw MemoryV2Exception(MemoryV2ErrorCode.SCHEMA_INVALID)
         }
-        val operation = MemoryV2ReconciliationPolicy.normalize(
-            item.optString("operation"),
-        ) ?: throw MemoryV2Exception(MemoryV2ErrorCode.SCHEMA_INVALID)
-        val relationType = item.optString("relation_type")
+        val rawOperation = item.optString("operation")
+        val operation = if (strictSemantics) {
+            MemoryV2ReconciliationPolicy.canonical(rawOperation)
+        } else {
+            MemoryV2ReconciliationPolicy.normalize(rawOperation)
+        } ?: throw MemoryV2Exception(MemoryV2ErrorCode.SCHEMA_INVALID)
+        val rawRelationType = item.optString("relation_type")
             .takeIf { it.isNotBlank() && !item.isNull("relation_type") }
-            ?.let { MemoryV2ReconciliationPolicy.normalizeRelationType(it) }
+        val normalizedRelationType = rawRelationType?.let {
+                if (strictSemantics) {
+                    MemoryV2ReconciliationPolicy.canonicalRelationType(it)
+                } else {
+                    MemoryV2ReconciliationPolicy.normalizeRelationType(it)
+                }
+            }
+        if (rawRelationType != null && normalizedRelationType == null) {
+            throw MemoryV2Exception(MemoryV2ErrorCode.SCHEMA_INVALID)
+        }
+        val relationType = normalizedRelationType
             ?: if (operation == MemoryV2ReconciliationPolicy.RELATE) {
                 throw MemoryV2Exception(MemoryV2ErrorCode.SCHEMA_INVALID)
             } else {
@@ -1327,7 +1400,7 @@ class MemoryV2JobService(
             }
         if (
             operation != MemoryV2ReconciliationPolicy.RELATE &&
-            relationType != null
+            rawRelationType != null
         ) {
             throw MemoryV2Exception(MemoryV2ErrorCode.SCHEMA_INVALID)
         }
@@ -1373,21 +1446,30 @@ class MemoryV2JobService(
         ) ?: throw MemoryV2Exception(MemoryV2ErrorCode.SCHEMA_INVALID)
         val epistemic = MemoryV2CandidateNormalizer.epistemic(
             requiredString(item, "epistemic"),
+            allowSynonyms = !strictSemantics,
         ) ?: run {
             throw MemoryV2Exception(MemoryV2ErrorCode.SCHEMA_INVALID)
         }
         val commitmentState = item.optString("commitment_state")
             .takeIf { it.isNotBlank() && !item.isNull("commitment_state") }
             ?.let { value ->
-                when (value.lowercase()) {
-                    "none", "declared", "accepted" -> null
-                    "proposed", "active", "overdue_unknown", "completed" -> value
-                    "confirmed" -> "active"
-                    "declined", "rejected" -> "cancelled"
-                    "cancelled" -> "cancelled"
-                    else -> throw MemoryV2Exception(
+                if (strictSemantics) {
+                    value.lowercase().takeIf {
+                        it in CANDIDATE_COMMITMENT_STATES
+                    } ?: throw MemoryV2Exception(
                         MemoryV2ErrorCode.SCHEMA_INVALID,
                     )
+                } else {
+                    when (value.lowercase()) {
+                        "none", "declared", "accepted" -> null
+                        "proposed", "active", "overdue_unknown", "completed" -> value
+                        "confirmed" -> "active"
+                        "declined", "rejected" -> "cancelled"
+                        "cancelled" -> "cancelled"
+                        else -> throw MemoryV2Exception(
+                            MemoryV2ErrorCode.SCHEMA_INVALID,
+                        )
+                    }
                 }
             }
         val evidence = validateEvidenceArray(
@@ -1397,6 +1479,7 @@ class MemoryV2JobService(
         )
         return ValidatedMemoryCandidate(
             candidateId = requiredString(item, "candidate_id"),
+            tier = tier,
             operation = operation,
             relationType = relationType,
             subjectId = requiredString(item, "subject_id"),
@@ -1413,9 +1496,20 @@ class MemoryV2JobService(
             expectedVersion = expectedVersion,
             temporalJson = normalizedTemporal.toString(),
             commitmentState = commitmentState,
-            importanceHint = MemoryV2CandidateNormalizer.importance(
-                item.opt("importance_hint"),
-            ),
+            importanceHint = if (strictSemantics) {
+                val importance = (item.opt("importance_hint") as? Number)
+                    ?.toDouble()
+                    ?: throw MemoryV2Exception(MemoryV2ErrorCode.SCHEMA_INVALID)
+                if (!importance.isFinite() || importance !in 0.0..1.0) {
+                    throw MemoryV2Exception(MemoryV2ErrorCode.SCHEMA_INVALID)
+                }
+                importance
+            } else {
+                MemoryV2CandidateNormalizer.importance(
+                    item.opt("importance_hint"),
+                    allowLabelSynonyms = true,
+                )
+            },
             evidence = evidence,
         )
     }
@@ -1571,9 +1665,12 @@ class MemoryV2JobService(
         return "$messageId\u0000$revision\u0000$quote"
     }
 
-    private fun loadSources(envelope: TrustedMemoryEnvelope): Map<String, SourceBody> {
+    private fun loadSources(
+        envelope: TrustedMemoryEnvelope,
+        allowedMessageIds: Set<String> = envelope.newSourceIds.toSet(),
+    ): Map<String, SourceBody> {
         val db = database.readableDatabase
-        return envelope.sources.associate { source ->
+        return envelope.sources.filter { it.messageId in allowedMessageIds }.associate { source ->
             val body = db.query(
                 "messages",
                 arrayOf("body", "revision", "content_sha256", "state", "cache_expires_at"),
@@ -1949,12 +2046,25 @@ class MemoryV2JobService(
     }
 
     companion object {
+        private val CANDIDATE_REASONS = setOf(
+            "durable_preference",
+            "confirmed_commitment",
+            "important_experience",
+            "attributed_impression",
+            "recent_event",
+        )
+        private val CANDIDATE_COMMITMENT_STATES = setOf(
+            "proposed",
+            "active",
+            "overdue_unknown",
+            "completed",
+            "cancelled",
+        )
         private const val SUMMARY_SCHEDULER_PREFS = "memory_v2_summary_scheduler"
         private const val SUMMARY_CONTRACT_REVISION_KEY = "contract_revision"
         private const val SUMMARY_CONTRACT_REVISION = 3
         private const val EXTRACTION_SCHEDULER_PREFS = "memory_v2_extraction_scheduler"
-        private const val EXTRACTION_CONTRACT_REVISION_KEY = "contract_revision"
-        private const val EXTRACTION_CONTRACT_REVISION = 5
+        private const val EXTRACTION_PROMPT_REVISION_KEY = "prompt_revision"
         private val SUMMARY_SCHEDULER_LOCK = Any()
         private val EXTRACTION_SCHEDULER_LOCK = Any()
     }

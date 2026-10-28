@@ -34,6 +34,7 @@ data class ValidatedQuote(
 
 data class ValidatedMemoryCandidate(
     val candidateId: String,
+    val tier: String,
     val operation: String,
     val relationType: String?,
     val subjectId: String,
@@ -55,6 +56,8 @@ data class ValidatedExtractionBatch(
     val envelope: TrustedMemoryEnvelope,
     val processedMessageIds: List<String>,
     val candidates: List<ValidatedMemoryCandidate>,
+    val phaseClosed: Boolean,
+    val phaseReason: String,
 )
 
 data class ValidatedWorkingItem(

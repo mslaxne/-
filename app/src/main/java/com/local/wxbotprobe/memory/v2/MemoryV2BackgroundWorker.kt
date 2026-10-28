@@ -10,8 +10,10 @@ import java.time.ZonedDateTime
 import java.util.Date
 import java.util.Locale
 import java.util.concurrent.Executors
+import java.util.concurrent.ScheduledFuture
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
 
 interface MemoryV2BatchGenerator {
     fun generate(job: LeasedMemoryJob): String
@@ -208,6 +210,10 @@ class MemoryV2BackgroundWorker(
             Thread(it, "memory-v2-worker").apply { isDaemon = true }
         }
         private val scheduled = AtomicBoolean(false)
+        private val generation = AtomicInteger(0)
+
+        @Volatile
+        private var scheduledFuture: ScheduledFuture<*>? = null
 
         fun kick(context: Context) {
             if (!scheduled.compareAndSet(false, true)) {
@@ -215,6 +221,14 @@ class MemoryV2BackgroundWorker(
             }
             val appContext = context.applicationContext
             schedule(appContext, 0L)
+        }
+
+        fun restart(context: Context) {
+            generation.incrementAndGet()
+            scheduledFuture?.cancel(false)
+            scheduled.set(false)
+            MemoryV2PumpStatus.set(MemoryV2PumpState.IDLE)
+            kick(context)
         }
 
         fun isPumping(): Boolean {
@@ -226,14 +240,21 @@ class MemoryV2BackgroundWorker(
         }
 
         private fun schedule(context: Context, delayMillis: Long) {
-            executor.schedule(
+            val token = generation.get()
+            scheduledFuture = executor.schedule(
                 {
+                    if (token != generation.get()) {
+                        return@schedule
+                    }
                     try {
                         MemoryV2PumpStatus.set(MemoryV2PumpState.RUNNING)
                         var nextDelay: Long? = null
                         var processed = 0
                         val worker = MemoryV2BackgroundWorker(context)
-                        while (processed < MAX_PASSES_PER_WAKE) {
+                        while (
+                            processed < MAX_PASSES_PER_WAKE &&
+                            token == generation.get()
+                        ) {
                             val pass = worker.runOnceDetailed()
                             when (pass.outcome) {
                                 MemoryV2WorkerOutcome.PROGRESS -> processed++
@@ -257,15 +278,22 @@ class MemoryV2BackgroundWorker(
                                 }
                             }
                         }
+                        if (token != generation.get()) {
+                            return@schedule
+                        }
                         if (nextDelay == null) {
                             MemoryV2PumpStatus.set(MemoryV2PumpState.IDLE)
                             scheduled.set(false)
+                            scheduledFuture = null
                         } else {
                             schedule(context, nextDelay)
                         }
                     } catch (_: Throwable) {
-                        MemoryV2PumpStatus.set(MemoryV2PumpState.IDLE)
-                        scheduled.set(false)
+                        if (token == generation.get()) {
+                            MemoryV2PumpStatus.set(MemoryV2PumpState.IDLE)
+                            scheduled.set(false)
+                            scheduledFuture = null
+                        }
                     }
                 },
                 delayMillis,

@@ -15,7 +15,8 @@
     "max_llm_calls_per_scope_hour": 12,
     "max_sources": 0,
     "min_batch_messages": 8,
-    "one_inflight_per_scope": true
+    "one_inflight_per_scope": true,
+    "recent_context_sources": 16
   },
   "capacity": {
     "control_reserve_bytes": 1048576,
@@ -217,9 +218,9 @@
   "timezone": "Asia/Shanghai",
   "versions": {
     "answer_prompt": "answer-2.1.0",
-    "extraction_prompt": "extract-2.1.2",
-    "pipeline": "2.1.2",
-    "policy": "2.1.2",
-    "summary_prompt": "summary-2.1.2"
+    "extraction_prompt": "extract-2.5.1",
+    "pipeline": "2.5.1",
+    "policy": "2.5.1",
+    "summary_prompt": "summary-2.2.0"
   }
 }

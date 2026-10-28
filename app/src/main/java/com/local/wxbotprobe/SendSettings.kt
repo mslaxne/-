@@ -4,9 +4,7 @@ import android.content.Context
 
 object SendSettings {
     private const val PREFS = "send_settings"
-    private const val KEY_AUTO_SEND = "auto_send"
     private const val KEY_ORIGINAL_IME = "original_ime"
-    private const val KEY_WHITELIST = "send_whitelist"
     private const val KEY_DAILY_MESSAGE_LIMIT = "daily_message_limit"
     private const val KEY_DAILY_COST_LIMIT = "daily_cost_limit"
     private const val KEY_QUIET_ENABLED = "quiet_enabled"
@@ -36,18 +34,6 @@ object SendSettings {
         Float.POSITIVE_INFINITY,
     )
 
-    fun autoSend(context: Context): Boolean {
-        return context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-            .getBoolean(KEY_AUTO_SEND, false)
-    }
-
-    fun setAutoSend(context: Context, enabled: Boolean) {
-        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-            .edit()
-            .putBoolean(KEY_AUTO_SEND, enabled)
-            .apply()
-    }
-
     fun originalIme(context: Context): String? {
         return context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
             .getString(KEY_ORIGINAL_IME, null)
@@ -57,20 +43,6 @@ object SendSettings {
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
             .edit()
             .putString(KEY_ORIGINAL_IME, ime)
-            .apply()
-    }
-
-    fun whitelist(context: Context): Set<String> {
-        return context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-            .getStringSet(KEY_WHITELIST, emptySet())
-            .orEmpty()
-            .toSet()
-    }
-
-    fun setWhitelist(context: Context, values: Set<String>) {
-        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-            .edit()
-            .putStringSet(KEY_WHITELIST, values)
             .apply()
     }
 

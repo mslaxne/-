@@ -37,8 +37,8 @@ class PersonaAndTextTest {
             examples = listOf("在吗" to "在", "忙吗" to "还好"),
             identityMode = PersonaIdentityMode.TRANSPARENT_COMPANION,
             identityQuestionPolicy = PersonaIdentityQuestionPolicy.DISCLOSE_AI,
-            contactAddress = "同事",
-            relationshipRole = "同事陪伴角色",
+            contactAddress = "老婆",
+            relationshipRole = "丈夫陪伴角色",
         )
         assertEquals(
             profile,
@@ -84,8 +84,8 @@ class PersonaAndTextTest {
             examples = emptyList(),
             identityMode = PersonaIdentityMode.TRANSPARENT_COMPANION,
             identityQuestionPolicy = PersonaIdentityQuestionPolicy.DISCLOSE_AI,
-            contactAddress = "同事",
-            relationshipRole = "同事陪伴角色",
+            contactAddress = "老婆",
+            relationshipRole = "丈夫陪伴角色",
         )
         val immersive = transparent.copy(
             identityMode = PersonaIdentityMode.IMMERSIVE_COMPANION,
@@ -99,7 +99,7 @@ class PersonaAndTextTest {
         assertTrue("必须明确说明你是 AI 助手" in transparentPrompt)
         assertTrue("角色语气偏好" in immersivePrompt)
         assertTrue("联系人页面保存了单独的沉浸角色知情确认" in immersivePrompt)
-        assertTrue("对联系人的常用称呼：同事" in transparentPrompt)
+        assertTrue("对联系人的常用称呼：老婆" in transparentPrompt)
     }
 
     @Test

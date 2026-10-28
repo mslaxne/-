@@ -1,0 +1,40 @@
+package com.local.wxbotprobe.memory.v2
+
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
+import org.junit.Test
+
+class MemoryV2ExtractionFailureRecoveryPolicyTest {
+    @Test
+    fun `prompt and evidence contract failures can be retried after prompt change`() {
+        assertTrue(
+            MemoryV2ExtractionFailureRecoveryPolicy.recoverable(
+                MemoryV2ErrorCode.SCHEMA_INVALID.name,
+            ),
+        )
+        assertTrue(
+            MemoryV2ExtractionFailureRecoveryPolicy.recoverable(
+                MemoryV2ErrorCode.INVALID_EVIDENCE.name,
+            ),
+        )
+        assertTrue(
+            MemoryV2ExtractionFailureRecoveryPolicy.recoverable(
+                MemoryV2ErrorCode.COVERAGE_MISMATCH.name,
+            ),
+        )
+    }
+
+    @Test
+    fun `source and storage failures are not blindly requeued`() {
+        assertFalse(
+            MemoryV2ExtractionFailureRecoveryPolicy.recoverable(
+                MemoryV2ErrorCode.SOURCE_UNAVAILABLE.name,
+            ),
+        )
+        assertFalse(
+            MemoryV2ExtractionFailureRecoveryPolicy.recoverable(
+                MemoryV2ErrorCode.STORAGE_UNAVAILABLE.name,
+            ),
+        )
+    }
+}
