@@ -20,6 +20,9 @@ class DebugMemoryV2ExtractProbeReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent?) {
         val messageId = intent?.getStringExtra(EXTRA_MESSAGE_ID).orEmpty()
         val jobId = intent?.getStringExtra(EXTRA_JOB_ID).orEmpty()
+        val databaseName = intent?.getStringExtra(EXTRA_DATABASE_NAME)
+            ?.takeIf { it.isNotBlank() }
+            ?: "memory-v2.db"
         val execute = intent?.getBooleanExtra(EXTRA_EXECUTE, false) == true
         val pending = goAsync()
         Thread(
@@ -33,6 +36,7 @@ class DebugMemoryV2ExtractProbeReceiver : BroadcastReceiver() {
                         context.applicationContext,
                         messageId.takeIf { it.isNotBlank() },
                         jobId.takeIf { it.isNotBlank() },
+                        databaseName,
                     )
                 }
                 val output = File(
@@ -64,8 +68,9 @@ class DebugMemoryV2ExtractProbeReceiver : BroadcastReceiver() {
         context: Context,
         messageId: String?,
         jobId: String?,
+        databaseName: String,
     ): JSONObject {
-        val database = MemoryV2Database(context)
+        val database = MemoryV2Database(context, databaseName)
         val jobs = MemoryV2JobService(context, database)
         val commits = MemoryV2BatchCommitService(context, database)
         val client = ModelClientFactory.create(context)
@@ -215,6 +220,7 @@ class DebugMemoryV2ExtractProbeReceiver : BroadcastReceiver() {
     companion object {
         private const val EXTRA_MESSAGE_ID = "message_id"
         private const val EXTRA_JOB_ID = "job_id"
+        private const val EXTRA_DATABASE_NAME = "database_name"
         private const val EXTRA_EXECUTE = "execute"
         private const val MAX_ROUNDS = 8
     }

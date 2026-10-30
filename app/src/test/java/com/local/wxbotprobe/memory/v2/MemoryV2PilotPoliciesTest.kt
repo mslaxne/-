@@ -162,6 +162,18 @@ class MemoryV2PilotPoliciesTest {
     }
 
     @Test
+    fun `summary output uses the documented profile ceiling`() {
+        assertEquals(
+            8_192,
+            MemoryV2BatchOutputPolicy.summaryMaxTokens(8_192),
+        )
+        assertEquals(
+            1_200,
+            MemoryV2BatchOutputPolicy.summaryMaxTokens(1_200),
+        )
+    }
+
+    @Test
     fun `compact output envelope accepts only the frozen job id`() {
         val compact = org.json.JSONObject().put("job_id", "job-1")
 

@@ -25,6 +25,8 @@ object MemoryV2SummaryOutputContract {
                     listOf(
                         "candidate_id",
                         "tier",
+                        "operation",
+                        "relation_type",
                         "subject_id",
                         "viewpoint_id",
                         "predicate",
@@ -42,16 +44,12 @@ object MemoryV2SummaryOutputContract {
                 ),
             )
             .put("event_reason_enum", JSONArray(listOf("recent_event")))
-            .put("max_events_per_batch", 2)
             .put(
                 "working_summary_required",
                 JSONArray(
                     listOf("goals", "constraints", "unresolved", "references"),
                 ),
             )
-            .put("working_summary_target_items", 6)
-            .put("working_summary_max_items", 9)
-            .put("working_summary_section_max_items", 3)
             .put(
                 "working_item_required",
                 JSONArray(listOf("text", "evidence")),
@@ -67,6 +65,8 @@ object MemoryV2SummaryOutputContract {
                         "Do not output kind, pinned or permission fields.",
                         "A3 is the rolling session working_summary. " +
                             "Each recent event candidate must use tier A2.",
+                        "Every summary event must use operation ADD and " +
+                            "relation_type null.",
                         "Every working_summary section must be an array.",
                         "temporal must contain occurred_at, local_date, timezone, " +
                             "precision and original.",

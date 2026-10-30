@@ -179,6 +179,7 @@ class MeteredChatClient(
     private val dailyLimitUsd: () -> Double = { Double.POSITIVE_INFINITY },
     private val model: String = "deepseek-flash",
     private val nowMillis: () -> Long = System::currentTimeMillis,
+    private val enforceDailyLimit: Boolean = true,
 ) : ChatClient {
     override fun chat(
         messages: List<ChatMessage>,
@@ -191,7 +192,10 @@ class MeteredChatClient(
         val limit = dailyLimitUsd()
         val requestMessages = ChatImagePolicy.capForRequest(messages)
         val estimate = ApiBudgetPolicy.worstCaseUsd(requestMessages, maxTokens, model)
-        if (!ApiBudgetGate.reserve(date, spent, limit, estimate)) {
+        if (
+            enforceDailyLimit &&
+            !ApiBudgetGate.reserve(date, spent, limit, estimate)
+        ) {
             throw ApiBudgetExceededException(spentUsd = spent, limitUsd = limit)
         }
         try {
@@ -204,7 +208,9 @@ class MeteredChatClient(
             )
             return completion
         } finally {
-            ApiBudgetGate.release(date, estimate)
+            if (enforceDailyLimit) {
+                ApiBudgetGate.release(date, estimate)
+            }
         }
     }
 }

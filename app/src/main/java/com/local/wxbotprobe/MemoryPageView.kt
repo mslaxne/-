@@ -12,6 +12,8 @@ import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
+import android.widget.Toast
+import com.local.wxbotprobe.api.ModelSettings
 import com.local.wxbotprobe.bot.EffectiveRoleplayPolicy
 import com.local.wxbotprobe.bot.PersonaIdentityMode
 import com.local.wxbotprobe.bot.PersonaSelectionService
@@ -19,6 +21,7 @@ import com.local.wxbotprobe.bot.RoleplayConsentRecord
 import com.local.wxbotprobe.bot.RoleplayPolicyService
 import com.local.wxbotprobe.memory.v2.MemoryV2AdminStore
 import com.local.wxbotprobe.memory.v2.MemoryV2A0ProposalRow
+import com.local.wxbotprobe.memory.v2.MemoryV2BackgroundWorker
 import com.local.wxbotprobe.memory.v2.MemoryV2ConflictRow
 import com.local.wxbotprobe.memory.v2.MemoryV2ConflictService
 import com.local.wxbotprobe.memory.v2.MemoryV2ContactOverview
@@ -27,6 +30,8 @@ import com.local.wxbotprobe.memory.v2.MemoryV2ManualMemoryService
 import com.local.wxbotprobe.memory.v2.MemoryV2MigrationPreview
 import com.local.wxbotprobe.memory.v2.MemoryV2PersonaMigrationService
 import com.local.wxbotprobe.memory.v2.MemoryV2PumpState
+import com.local.wxbotprobe.memory.v2.MemoryV2PumpMode
+import com.local.wxbotprobe.memory.v2.MemoryV2PumpStage
 import com.local.wxbotprobe.memory.v2.MemoryV2PumpStatus
 import com.local.wxbotprobe.memory.v2.MemoryV2PersonaScopeService
 import com.local.wxbotprobe.memory.v2.MemoryV2ReplyContextSnapshot
@@ -49,6 +54,8 @@ class MemoryPageView(
     private lateinit var memoriesValue: TextView
     private lateinit var eventsValue: TextView
     private lateinit var extractionStatusDetail: TextView
+    private lateinit var manualExtractionDetail: TextView
+    private var pumpRefreshScheduled = false
 
     init {
         view = LinearLayout(activity).apply {
@@ -90,6 +97,22 @@ class MemoryPageView(
             }
             addView(
                 extractionStatusDetail,
+                MainUiComponents.fullWidth().apply { topMargin = dp(10) },
+            )
+
+            val manualExtraction = MainUiComponents.actionRow(
+                activity,
+                R.drawable.ic_refresh,
+                "立即整理记忆",
+                "先提取待处理消息，再完成摘要整理",
+                onClick = ::manualOrganize,
+            )
+            manualExtractionDetail = manualExtraction.detail
+            addView(
+                MainUiComponents.groupViews(
+                    activity,
+                    listOf(manualExtraction.view),
+                ),
                 MainUiComponents.fullWidth().apply { topMargin = dp(10) },
             )
 
@@ -168,23 +191,52 @@ class MemoryPageView(
         } else {
             ""
         }
+        val pump = MemoryV2PumpStatus.snapshot()
+        val stageText = when (pump.stage) {
+            MemoryV2PumpStage.EXTRACTION -> "提取记忆"
+            MemoryV2PumpStage.SUMMARY -> "生成摘要"
+            MemoryV2PumpStage.COMPLETE -> "整理完成"
+            MemoryV2PumpStage.STOPPED ->
+                "已停止：${manualStopLabel(pump.errorCode)}"
+            MemoryV2PumpStage.NONE -> "等待触发"
+        }
+        val statusText = when (pump.state) {
+            MemoryV2PumpState.RUNNING ->
+                if (pump.mode == MemoryV2PumpMode.MANUAL) {
+                    "手动整理中 · $stageText"
+                } else {
+                    "后台整理中 · $stageText"
+                }
+            MemoryV2PumpState.PAUSED_HOURLY ->
+                "小时额度已用完 · 下个整点继续"
+            MemoryV2PumpState.PAUSED_DAILY ->
+                "今日 API 费用已达上限 · 明日继续"
+            MemoryV2PumpState.IDLE ->
+                if (
+                    pump.mode == MemoryV2PumpMode.MANUAL &&
+                    pump.stage in setOf(
+                        MemoryV2PumpStage.COMPLETE,
+                        MemoryV2PumpStage.STOPPED,
+                    )
+                ) {
+                    stageText
+                } else {
+                    "等待触发"
+                }
+        }
         extractionStatusDetail.text = String.format(
             Locale.CHINA,
-            "%s · 摘要完成 %d · 缺口 %d · 待处理 %d · 待审核 %d%s",
-            when (MemoryV2PumpStatus.state()) {
-                MemoryV2PumpState.RUNNING -> "后台提取中"
-                MemoryV2PumpState.PAUSED_HOURLY ->
-                    "小时额度已用完 · 下个整点继续"
-                MemoryV2PumpState.PAUSED_DAILY ->
-                    "今日 API 费用已达上限 · 明日继续"
-                MemoryV2PumpState.IDLE -> "等待触发"
-            },
+            "%s · 待提取 %d · 待摘要 %d · 摘要完成 %d · 缺口 %d · " +
+                "待审核 %d%s",
+            statusText,
+            overview.pendingExtractionCount,
+            overview.pendingSummaryCount,
             overview.summaryDoneCount,
             overview.summaryGapCount,
-            overview.pendingSummaryCount,
             overview.pendingConflicts,
             issueText,
         )
+        manualExtractionDetail.text = manualStatusDetail(overview, pump)
 
         chatsContainer.removeAllViews()
         if (overview.contacts.isEmpty()) {
@@ -209,6 +261,130 @@ class MemoryPageView(
         chatsContainer.addView(
             MainUiComponents.groupViews(activity, rows),
             MainUiComponents.fullWidth(),
+        )
+    }
+
+    private fun manualOrganize() {
+        if (!ModelSettings.isConfigured(activity)) {
+            Toast.makeText(
+                activity,
+                "请先完成模型配置",
+                Toast.LENGTH_SHORT,
+            ).show()
+            return
+        }
+        val overview = admin().overview()
+        if (
+            overview.pendingExtractionCount <= 0 &&
+            overview.pendingSummaryCount <= 0
+        ) {
+            Toast.makeText(
+                activity,
+                "当前没有待整理消息",
+                Toast.LENGTH_SHORT,
+            ).show()
+            return
+        }
+        val pump = MemoryV2PumpStatus.snapshot()
+        if (
+            pump.state == MemoryV2PumpState.RUNNING &&
+            pump.mode == MemoryV2PumpMode.MANUAL
+        ) {
+            Toast.makeText(
+                activity,
+                "正在整理记忆",
+                Toast.LENGTH_SHORT,
+            ).show()
+            return
+        }
+        MemoryV2BackgroundWorker.restart(
+            activity,
+            forceExtraction = true,
+        )
+        Toast.makeText(
+            activity,
+            "已开始整理记忆",
+            Toast.LENGTH_SHORT,
+        ).show()
+        schedulePumpRefresh()
+    }
+
+    private fun manualStatusDetail(
+        overview: com.local.wxbotprobe.memory.v2.MemoryV2Overview,
+        pump: com.local.wxbotprobe.memory.v2.MemoryV2PumpSnapshot,
+    ): String {
+        val stage = when (pump.stage) {
+            MemoryV2PumpStage.EXTRACTION -> "提取记忆"
+            MemoryV2PumpStage.SUMMARY -> "生成摘要"
+            MemoryV2PumpStage.COMPLETE -> "整理完成"
+            MemoryV2PumpStage.STOPPED ->
+                "整理已停止：${manualStopLabel(pump.errorCode)}"
+            MemoryV2PumpStage.NONE -> "逐批整理记忆"
+        }
+        return when {
+            pump.state == MemoryV2PumpState.RUNNING ->
+                "$stage · 待提取 ${overview.pendingExtractionCount} · " +
+                    "待摘要 ${overview.pendingSummaryCount}"
+            pump.mode == MemoryV2PumpMode.MANUAL &&
+                pump.stage == MemoryV2PumpStage.STOPPED ->
+                "$stage · 待提取 ${overview.pendingExtractionCount} · " +
+                    "待摘要 ${overview.pendingSummaryCount}"
+            overview.pendingExtractionCount > 0 &&
+                overview.pendingSummaryCount > 0 ->
+                "处理 ${overview.pendingExtractionCount} 条待提取消息，" +
+                    "再整理 ${overview.pendingSummaryCount} 条摘要"
+            overview.pendingExtractionCount > 0 ->
+                "处理 ${overview.pendingExtractionCount} 条待提取消息"
+            overview.pendingSummaryCount > 0 ->
+                "整理 ${overview.pendingSummaryCount} 条消息摘要"
+            else -> "当前没有待整理消息"
+        }
+    }
+
+    private fun manualStopLabel(errorCode: String?): String {
+        return when (errorCode) {
+            "SCHEMA_INVALID",
+            "ENVELOPE_MISMATCH",
+            "COVERAGE_MISMATCH",
+            "SOURCE_SET_INVALID",
+            "PROMPT_VERSION_MISMATCH",
+            -> "结构校验未通过"
+            "QUOTE_NOT_FOUND",
+            "QUOTE_AMBIGUOUS",
+            "QUOTE_TOO_LARGE",
+            "INVALID_EVIDENCE",
+            "SOURCE_UNAVAILABLE",
+            "SOURCE_CHANGED",
+            "SOURCE_FORGOTTEN",
+            -> "来源证据校验未通过"
+            "RESOURCE_CAPACITY_EXHAUSTED",
+            "STORAGE_UNAVAILABLE",
+            -> "本地存储不可用"
+            "MODEL_REQUEST_FAILED" -> "模型请求失败"
+            "MODEL_NOT_CONFIGURED" -> "模型配置不可用"
+            "DAILY_BUDGET_EXHAUSTED" -> "模型费用限制"
+            "EXTRACTION_NOT_SCHEDULABLE",
+            "SUMMARY_NOT_SCHEDULABLE",
+            -> "需检查失败任务"
+            null -> "未知错误"
+            else -> errorCode
+        }
+    }
+
+    private fun schedulePumpRefresh() {
+        if (pumpRefreshScheduled) {
+            return
+        }
+        pumpRefreshScheduled = true
+        view.postDelayed(
+            {
+                pumpRefreshScheduled = false
+                refresh()
+                if (MemoryV2PumpStatus.state() == MemoryV2PumpState.RUNNING) {
+                    schedulePumpRefresh()
+                }
+            },
+            1_500L,
         )
     }
 

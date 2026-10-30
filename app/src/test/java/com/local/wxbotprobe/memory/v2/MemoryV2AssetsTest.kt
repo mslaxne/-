@@ -68,7 +68,7 @@ class MemoryV2AssetsTest {
             config.getJSONObject("versions").getString("extraction_prompt"),
         )
         assertEquals(
-            "summary-2.2.0",
+            "summary-2.2.2",
             config.getJSONObject("versions").getString("summary_prompt"),
         )
         assertEquals(

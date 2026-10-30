@@ -2,7 +2,7 @@ package com.local.wxbotprobe.memory.v2
 
 object MemoryV2BatchOutputPolicy {
     const val EXTRACTION_OUTPUT_TOKENS = 2_048
-    const val SUMMARY_OUTPUT_TOKENS = 2_000
+    const val SUMMARY_OUTPUT_TOKENS = 8_192
 
     fun extractionMaxTokens(profileMaximum: Int?): Int {
         return minOf(

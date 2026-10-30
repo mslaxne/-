@@ -32,6 +32,11 @@ no Compose or Material dependency added.
 - Memory: four inline metrics, contact rows with individual management buttons,
   separate pending A0 and conflict review sections, per-contact
   retention/deletion and a separate global destructive action.
+- Memory overview includes one `立即整理记忆` action. Manual operation drains
+  extraction first, then summary checkpoints of at most 8 messages per job. It
+  bypasses the normal batch window, open-phase deferral, transient-failure
+  cooldown, memory hourly quota and daily API soft cap while still recording
+  actual spend. The status line shows the active stage and pending counts.
 - Diagnostics: grouped capture/OCR and input/send commands plus a screenshot
   preview.
 - Dialogs: shared light theme, rounded window, consistent accent colours and

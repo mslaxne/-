@@ -9,6 +9,7 @@ object ModelClientFactory {
         context: Context,
         timeoutMs: Int = 60_000,
         maxRetries: Int = 3,
+        enforceDailyBudget: Boolean = true,
     ): ChatClient? {
         val configuration = ModelSettings.load(context)
         val apiKey = ApiKeyStore(context)
@@ -35,6 +36,7 @@ object ModelClientFactory {
             usageStore = ApiUsageStore(context),
             dailyLimitUsd = { SendSettings.dailyCostLimitUsd(context) },
             model = configuration.model,
+            enforceDailyLimit = enforceDailyBudget,
         )
     }
 }

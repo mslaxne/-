@@ -221,6 +221,6 @@
     "extraction_prompt": "extract-2.5.1",
     "pipeline": "2.5.1",
     "policy": "2.5.1",
-    "summary_prompt": "summary-2.2.0"
+    "summary_prompt": "summary-2.2.2"
   }
 }

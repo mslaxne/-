@@ -26,15 +26,15 @@
       "context_window_tokens": 1048576,
       "window_kind": "provider_documented_window",
       "provider_context_label": "1M",
-      "output_max_tokens": 2048,
-      "verified_at": "2026-10-23T00:00:00+08:00",
+      "output_max_tokens": 8192,
+      "verified_at": "2026-10-30T00:00:00+08:00",
       "tokenizer_sha256": null,
       "tokenizer_model_revision": null,
       "chat_template_sha256": null,
       "tokenizer_calibrated": false,
       "text_only": true,
       "thinking_enabled": false,
-      "verification": "Official docs checked; the provider currently labels this deployment as 1M. The application no longer imposes a smaller count or input-token cap. No live tokenizer calibration performed."
+      "verification": "Official docs checked on 2026-10-30: deepseek-flash has a 1M context and 384K maximum output. This profile uses an 8192-token output window to avoid truncating structured memory JSON; no input-token cap is imposed. No live tokenizer calibration performed."
     }
   ],
   "official_reference": {

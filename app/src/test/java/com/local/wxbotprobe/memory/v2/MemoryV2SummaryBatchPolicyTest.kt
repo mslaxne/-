@@ -6,6 +6,22 @@ import org.junit.Test
 
 class MemoryV2SummaryBatchPolicyTest {
     @Test
+    fun `summary input is checkpointed even when configured maximum is unlimited`() {
+        assertEquals(
+            8,
+            MemoryV2SummaryBatchPolicy.effectiveSourceLimit(0, 8),
+        )
+        assertEquals(
+            4,
+            MemoryV2SummaryBatchPolicy.effectiveSourceLimit(4, 8),
+        )
+        assertEquals(
+            8,
+            MemoryV2SummaryBatchPolicy.effectiveSourceLimit(32, 8),
+        )
+    }
+
+    @Test
     fun `first summary uses the configured maximum`() {
         assertEquals(
             32,

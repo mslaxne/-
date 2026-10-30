@@ -37,4 +37,40 @@ class MemoryV2ExtractionFailureRecoveryPolicyTest {
             ),
         )
     }
+
+    @Test
+    fun `storage failure gets a bounded delayed retry`() {
+        assertTrue(
+            MemoryV2ExtractionFailureRecoveryPolicy.shouldRetryTerminalFailure(
+                errorCode = MemoryV2ErrorCode.STORAGE_UNAVAILABLE.name,
+                failedGenerations = 1,
+                lastFailedAt = 1_000,
+                nowEpochSeconds = 1_061,
+            ),
+        )
+        assertTrue(
+            MemoryV2ExtractionFailureRecoveryPolicy.shouldRetryTerminalFailure(
+                errorCode = MemoryV2ErrorCode.MODEL_REQUEST_FAILED.name,
+                failedGenerations = 1,
+                lastFailedAt = 1_000,
+                nowEpochSeconds = 1_061,
+            ),
+        )
+        assertFalse(
+            MemoryV2ExtractionFailureRecoveryPolicy.shouldRetryTerminalFailure(
+                errorCode = MemoryV2ErrorCode.STORAGE_UNAVAILABLE.name,
+                failedGenerations = 1,
+                lastFailedAt = 1_000,
+                nowEpochSeconds = 1_059,
+            ),
+        )
+        assertFalse(
+            MemoryV2ExtractionFailureRecoveryPolicy.shouldRetryTerminalFailure(
+                errorCode = MemoryV2ErrorCode.STORAGE_UNAVAILABLE.name,
+                failedGenerations = 3,
+                lastFailedAt = 1_000,
+                nowEpochSeconds = 2_000,
+            ),
+        )
+    }
 }

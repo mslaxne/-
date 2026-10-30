@@ -19,6 +19,8 @@ chat that is currently open.
 ## Test APK
 
 - [Download the 1.1.2 Route C test build](https://github.com/mslaxne/-/releases/tag/v1.1.2-test.1)
+- The current public source candidate is `1.1.3` (163); `1.1.2` remains the
+  most recently uploaded test APK.
 - The APK is signed with an Android development/debug certificate. It is a
   feedback build, not a stable production release.
 - Include the device model, Android version, WeChat version, app version, and
@@ -113,6 +115,11 @@ chat that is currently open.
   configurable 1/3/7/31-day or permanent retention.
 - The extraction model decides when a conversation phase has ended and writes
   memory back to A0/A1/A2 plus a rolling A3 session summary.
+- The Memory page provides `Organize memory now`: it drains pending extraction
+  first, then creates summary checkpoints of at most eight sources per job.
+  Manual runs bypass waiting windows, retry cooldowns, hourly call budgets and
+  the daily cost soft cap while still recording actual token usage. Structural,
+  evidence and storage failures stop the run.
 - Extraction receives all active A0/A1 memories, relevant A0/A2 memories, the
   previous A3 summary and recent source messages. A3 and recent sources are
   reference-only and cannot be cited as evidence.

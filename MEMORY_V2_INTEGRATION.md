@@ -19,7 +19,7 @@ Memory 2.0 is the **only production memory path**. Production no longer
 constructs `ChatMemoryStore` or `AgentMemoryManager`; legacy classes remain
 isolated historical tooling and are not referenced by the app UI or coordinator.
 
-Current public candidate: `1.1.2` (versionCode `162`). Route C and Route B
+Current public source candidate: `1.1.3` (versionCode `163`). Route C and Route B
 share the same Memory V2 implementation described here.
 
 Implemented Android foundation:
@@ -85,6 +85,17 @@ Implemented Android foundation:
 - production-shaped background worker now adds persistent per-scope/device hourly
   call budgets, job leasing, retry/failure handling and a DeepSeek batch
   generator that uses the vendored prompts/model profile/token budget.
+- terminal model-request and storage failures get at most three fresh extraction
+  generations after a 60-second cooldown. Failed jobs remain in history and
+  pending source messages are not deleted or rewritten.
+- a no-progress open-phase result with the same source set is deferred even when
+  the session is already closed, preventing repeated calls on identical context.
+- the Memory page provides one `立即整理记忆` action. It drains pending extraction
+  first and then summary checkpoints with at most 8 sources per job. Manual mode
+  bypasses the saved open-phase decision, failed-job cooldown, memory hourly
+  quota and daily API soft cap while still recording actual token spend.
+  Structural, evidence and storage failures stop the run and leave pending
+  counts visible.
 - legacy JSON migration tooling now has stable contact mapping, a read-only dry-run, and
   explicitly approved per-item checkpoints. The importer preserves source time,
   blocks missing-time sources, revalidates source evidence and TTL, enforces
@@ -93,7 +104,7 @@ Implemented Android foundation:
 - the production Memory page reads v2 contacts, raw message counts, long-term
   memories and commitments directly; migration and rollback controls have been
   removed.
-- Route C and Route B each pass 491 JVM tests; both Lint reports are clean.
+- Route C and Route B each pass 499 JVM tests; both Lint reports are clean.
 - On-device debug self-test passed: 19 contract tables, foreign keys enabled,
   scope creation, message sequence 1, duplicate client message `unchanged`,
   explicit save version 1, pin version 2, three operation receipts, forget

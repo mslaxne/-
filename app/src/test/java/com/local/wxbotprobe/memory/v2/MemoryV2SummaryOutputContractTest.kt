@@ -27,13 +27,6 @@ class MemoryV2SummaryOutputContractTest {
             listOf("text", "evidence"),
             contract.getJSONArray("working_item_required").toStringList(),
         )
-        assertEquals(2, contract.getInt("max_events_per_batch"))
-        assertEquals(6, contract.getInt("working_summary_target_items"))
-        assertEquals(9, contract.getInt("working_summary_max_items"))
-        assertEquals(
-            3,
-            contract.getInt("working_summary_section_max_items"),
-        )
     }
 
     @Test
@@ -45,9 +38,16 @@ class MemoryV2SummaryOutputContractTest {
         assertEquals(
             MemoryV2ExtractionOutputContract.json()
                 .getJSONArray("candidate_required")
-                .toStringList()
-                .filterNot { it == "operation" || it == "relation_type" },
+                .toStringList(),
             contract.getJSONArray("event_candidate_required").toStringList(),
+        )
+        val rules = contract.getJSONArray("field_rules").toStringList()
+        assertEquals(
+            1,
+            rules.count {
+                it.contains("operation ADD") &&
+                    it.contains("relation_type null")
+            },
         )
     }
 

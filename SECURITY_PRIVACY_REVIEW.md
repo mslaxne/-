@@ -1,8 +1,8 @@
 # 代理 security and privacy review
 
-Last reviewed: 2026-10-28.
+Last reviewed: 2026-10-31.
 
-Current public candidate: `1.1.2` (162).
+Current public source candidate: `1.1.3` (163).
 
 This is a focused static and release-artifact review, not a security
 certification. It covers backups, debug exports, API-key storage, chat-title
@@ -82,6 +82,11 @@ versions, transactions, idempotency, A0 review and persona/config protection.
 One extraction job is budgeted for at most four model calls: three read tools and
 one final submission.
 
+The explicit `立即整理记忆` action bypasses the memory hourly quota and daily API
+cost soft cap for that manual run. It does not bypass provider or storage
+validation, and actual token spend remains recorded. The action drains extraction
+before summary jobs and stops on structural, evidence or storage failure.
+
 The extraction model selects A0, A1 or A2 for each validated candidate. The
 model also decides whether an early conversation phase has ended; the program
 only enforces contiguous prefix coverage, evidence locality, idempotency and the
@@ -112,7 +117,7 @@ processing.
 
 ## Verification
 
-- Route C and Route B each pass `491` JVM tests with zero failures/errors.
+- Route C and Route B each pass `499` JVM tests with zero failures/errors.
 - Both Lint reports say `No issues found.`
 - Release APK inspection confirms the backup attributes and all exclusion
   domains.

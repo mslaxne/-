@@ -9,6 +9,21 @@ data class MemorySummaryJobSnapshot(
 object MemoryV2SummaryBatchPolicy {
     const val MIGRATION_ERROR = "SUMMARY_SCHEDULER_MIGRATION"
 
+    fun effectiveSourceLimit(
+        configuredMaximum: Int,
+        checkpointSize: Int,
+    ): Int {
+        require(configuredMaximum >= 0) {
+            "configuredMaximum must not be negative"
+        }
+        val checkpoint = checkpointSize.coerceAtLeast(1)
+        return if (configuredMaximum > 0) {
+            minOf(configuredMaximum, checkpoint)
+        } else {
+            checkpoint
+        }
+    }
+
     fun nextBatchLimit(
         last: MemorySummaryJobSnapshot?,
         maxSources: Int,

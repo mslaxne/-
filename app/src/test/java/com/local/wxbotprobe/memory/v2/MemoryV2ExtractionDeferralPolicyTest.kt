@@ -30,15 +30,19 @@ class MemoryV2ExtractionDeferralPolicyTest {
     }
 
     @Test
-    fun `closed session and completed previous coverage never defer`() {
-        assertFalse(
+    fun `closed session with unchanged open phase waits instead of looping`() {
+        assertTrue(
             MemoryV2ExtractionDeferralPolicy.shouldWaitForMoreSources(
                 previousSourceIds = listOf("m1", "m2"),
-                pendingSourceIds = listOf("m1", "m2", "m3"),
+                pendingSourceIds = listOf("m1", "m2"),
                 minimumNewSources = 8,
                 sessionOpen = false,
             ),
         )
+    }
+
+    @Test
+    fun `completed previous coverage never defers trailing sources`() {
         assertFalse(
             MemoryV2ExtractionDeferralPolicy.shouldWaitForMoreSources(
                 previousSourceIds = listOf("m1", "m2"),

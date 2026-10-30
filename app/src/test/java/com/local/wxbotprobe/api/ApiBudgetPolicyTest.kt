@@ -145,4 +145,30 @@ class ApiBudgetPolicyTest {
         assertEquals(10, usage.recordedPromptTokens)
         assertEquals(5, usage.recordedCompletionTokens)
     }
+
+    @Test
+    fun `manual override bypasses the cap but still records usage`() {
+        val delegate = FakeClient()
+        val usage = FakeUsage(spent = 5.0)
+        val client = MeteredChatClient(
+            delegate = delegate,
+            usageStore = usage,
+            dailyLimitUsd = { 1.0 },
+            model = "deepseek-flash",
+            nowMillis = { 1_700_000_000_000L },
+            enforceDailyLimit = false,
+        )
+
+        val result = client.chat(
+            listOf(ChatMessage("user", "手动提取")),
+            temperature = 0.1,
+            maxTokens = 100,
+        )
+
+        assertEquals("ok", result.text)
+        assertEquals(1, delegate.calls)
+        assertEquals(10, usage.recordedPromptTokens)
+        assertEquals(5, usage.recordedCompletionTokens)
+        assertTrue(usage.spent > 5.0)
+    }
 }
