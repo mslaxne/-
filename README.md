@@ -22,9 +22,8 @@ A0-A3 四级体系，代理会自主判断阶段性结束并整理写入记忆�
 
 ## 下载 APK
 
-- [下载 1.1.2 Route C 测试版](https://github.com/mslaxne/-/releases/tag/v1.1.2-test.1)，
+- [下载 1.1.3 Route C 测试版](https://github.com/mslaxne/-/releases/tag/v1.1.3-test.1)，
   目前测试过 vivo Android 13 / OnePlus Android 15，欢迎提供测试反馈和技术交流。
-- 当前公共源码候选为 `1.1.3`（163）；`1.1.2` 仍是最近上传的测试 APK。
 - 该构建使用 Android 开发/调试证书签名，只用于测试反馈，不是稳定正式版。
 - 问题反馈请提供设备型号、Android 版本、微信版本、App 版本和复现步骤；
   不要上传 API Key、聊天内容或其他敏感数据。

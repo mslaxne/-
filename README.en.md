@@ -18,9 +18,7 @@ chat that is currently open.
 
 ## Test APK
 
-- [Download the 1.1.2 Route C test build](https://github.com/mslaxne/-/releases/tag/v1.1.2-test.1)
-- The current public source candidate is `1.1.3` (163); `1.1.2` remains the
-  most recently uploaded test APK.
+- [Download the 1.1.3 Route C test build](https://github.com/mslaxne/-/releases/tag/v1.1.3-test.1)
 - The APK is signed with an Android development/debug certificate. It is a
   feedback build, not a stable production release.
 - Include the device model, Android version, WeChat version, app version, and
